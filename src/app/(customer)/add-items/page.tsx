@@ -146,7 +146,7 @@ export default function AddItemsPage() {
       if (isNewTote) {
         // Create new tote
         const toteId = `TV-${Math.floor(1000 + Math.random() * 9000)}`
-        await supabase.from('totes').insert({
+        const { error: insertError } = await supabase.from('totes').insert({
           id: toteId,
           customer_id: customer.id,
           tote_name: toteName,
@@ -157,6 +157,7 @@ export default function AddItemsPage() {
           last_scan_date: new Date().toISOString(),
           items: items.filter(i => i.label.trim()),
         })
+        if (insertError) throw insertError
       } else {
         // Add items to existing tote by barcode
         const { data: existingTote } = await supabase
@@ -167,10 +168,11 @@ export default function AddItemsPage() {
 
         if (existingTote) {
           const mergedItems = [...(existingTote.items as ToteItem[]), ...items.filter(i => i.label.trim())]
-          await supabase
+          const { error: updateError } = await supabase
             .from('totes')
             .update({ items: mergedItems, last_scan_date: new Date().toISOString() })
             .eq('id', existingTote.id)
+          if (updateError) throw updateError
         }
       }
 

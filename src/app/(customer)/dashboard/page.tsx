@@ -23,6 +23,15 @@ export default function DashboardPage() {
   })
   const [loading, setLoading] = useState(true)
 
+  // Refresh stats whenever the page becomes visible (returning from Add Items etc.)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') loadStats()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+
   useEffect(() => {
     async function loadStats() {
       const { data: userData } = await supabase.auth.getUser()
