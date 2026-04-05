@@ -255,97 +255,64 @@ alter table routes enable row level security;
 alter table pick_lists enable row level security;
 alter table errors enable row level security;
 
--- Customers: users see only their own row; admins see all
+-- Helper function: get current user's role without triggering RLS recursion
+create or replace function get_my_role()
+returns text
+language sql
+security definer
+stable
+as $$
+  select role::text from customers where auth_id = auth.uid() limit 1;
+$$;
+
+-- Customers: self read/insert/update + admin all
 create policy "customers_self_read" on customers
   for select using (auth.uid() = auth_id);
 
-create policy "customers_admin_all" on customers
-  for all using (
-    exists (
-      select 1 from customers c
-      where c.auth_id = auth.uid() and c.role = 'admin'
-    )
-  );
+create policy "customers_self_insert" on customers
+  for insert with check (auth.uid() = auth_id);
 
--- Totes: customers see only their own totes; staff see all
+create policy "customers_self_update" on customers
+  for update using (auth.uid() = auth_id);
+
+create policy "customers_admin_all" on customers
+  for all using (get_my_role() = 'admin');
+
+-- Totes: customers see only their own; staff see all
 create policy "totes_owner_read" on totes
   for select using (
-    customer_id in (
-      select id from customers where auth_id = auth.uid()
-    )
+    customer_id in (select id from customers where auth_id = auth.uid())
   );
 
 create policy "totes_staff_all" on totes
-  for all using (
-    exists (
-      select 1 from customers c
-      where c.auth_id = auth.uid()
-        and c.role in ('driver', 'warehouse', 'sorter', 'admin')
-    )
-  );
+  for all using (get_my_role() in ('driver','warehouse','sorter','admin'));
 
--- Bins: all staff can read; only admin/warehouse can write
+-- Bins: staff read; warehouse/admin write
 create policy "bins_staff_read" on bins
-  for select using (
-    exists (
-      select 1 from customers c
-      where c.auth_id = auth.uid()
-        and c.role in ('driver', 'warehouse', 'sorter', 'admin')
-    )
-  );
+  for select using (get_my_role() in ('driver','warehouse','sorter','admin'));
 
 create policy "bins_warehouse_write" on bins
-  for all using (
-    exists (
-      select 1 from customers c
-      where c.auth_id = auth.uid()
-        and c.role in ('warehouse', 'admin')
-    )
-  );
+  for all using (get_my_role() in ('warehouse','admin'));
 
--- Routes: drivers see their own routes; admins see all
+-- Routes: drivers see their own; admins see all
 create policy "routes_driver_read" on routes
   for select using (
-    driver_id in (
-      select id from customers where auth_id = auth.uid()
-    )
+    driver_id in (select id from customers where auth_id = auth.uid())
   );
 
 create policy "routes_admin_all" on routes
-  for all using (
-    exists (
-      select 1 from customers c
-      where c.auth_id = auth.uid() and c.role = 'admin'
-    )
-  );
+  for all using (get_my_role() = 'admin');
 
--- Pick lists: warehouse + admin access
+-- Pick lists: warehouse + admin
 create policy "pick_lists_warehouse_all" on pick_lists
-  for all using (
-    exists (
-      select 1 from customers c
-      where c.auth_id = auth.uid()
-        and c.role in ('warehouse', 'sorter', 'admin')
-    )
-  );
+  for all using (get_my_role() in ('warehouse','sorter','admin'));
 
--- Errors: admin only
+-- Errors: admin all; drivers can insert
 create policy "errors_admin_all" on errors
-  for all using (
-    exists (
-      select 1 from customers c
-      where c.auth_id = auth.uid() and c.role = 'admin'
-    )
-  );
+  for all using (get_my_role() = 'admin');
 
--- Drivers can insert errors (when flagging during route)
 create policy "errors_driver_insert" on errors
-  for insert with check (
-    exists (
-      select 1 from customers c
-      where c.auth_id = auth.uid() and c.role in ('driver', 'admin')
-    )
-  );
+  for insert with check (get_my_role() in ('driver','admin'));
 
 -- ============================================================
 -- SUPABASE STORAGE BUCKETS (run separately in dashboard or via API)

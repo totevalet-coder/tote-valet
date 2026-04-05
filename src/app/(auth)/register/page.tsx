@@ -110,7 +110,9 @@ function RegisterForm() {
 
       setStep('done')
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      const msg = err instanceof Error ? err.message : JSON.stringify(err)
+      console.error('[register] error:', err)
+      setError(msg)
     } finally {
       setLoading(false)
     }
@@ -298,7 +300,7 @@ function RegisterForm() {
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Preferred First Pickup Date</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">What date do you want your empty totes delivered?</label>
                 <input type="date" value={data.firstPickupDate} onChange={e => update('firstPickupDate', e.target.value)}
                   min={new Date().toISOString().split('T')[0]} className="input-field" />
               </div>
