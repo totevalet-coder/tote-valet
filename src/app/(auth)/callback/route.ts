@@ -7,35 +7,34 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
 
-    if (!error) {
+    // Exchange code — user data comes back directly, no second getUser() needed
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (!error && data?.user) {
+      const user = data.user
+
       // Check if this user already has a customer record
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('id, role')
+        .eq('auth_id', user.id)
+        .single()
 
-      if (user) {
-        const { data: customer } = await supabase
-          .from('customers')
-          .select('id, role')
-          .eq('auth_id', user.id)
-          .single()
-
-        if (!customer) {
-          // First time Google login — send to onboarding to complete profile
-          return NextResponse.redirect(`${origin}/register?oauth=true`)
-        }
-
-        // Existing user — route by role
-        const roleRoutes: Record<string, string> = {
-          customer: '/dashboard',
-          driver: '/driver',
-          warehouse: '/warehouse',
-          sorter: '/sorter',
-          admin: '/admin',
-        }
-        const dest = roleRoutes[customer.role] ?? '/dashboard'
-        return NextResponse.redirect(`${origin}${dest}`)
+      if (!customer) {
+        // First time — send to onboarding
+        return NextResponse.redirect(`${origin}/register?oauth=true`)
       }
+
+      // Existing user — route by role
+      const roleRoutes: Record<string, string> = {
+        customer: '/dashboard',
+        driver: '/driver',
+        warehouse: '/warehouse',
+        sorter: '/sorter',
+        admin: '/admin',
+      }
+      return NextResponse.redirect(`${origin}${roleRoutes[customer.role] ?? '/dashboard'}`)
     }
   }
 
