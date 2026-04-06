@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import StatBox from '@/components/ui/StatBox'
@@ -23,66 +23,55 @@ export default function DashboardPage() {
   })
   const [loading, setLoading] = useState(true)
 
-  // Refresh stats whenever the page becomes visible (returning from Add Items etc.)
+  const loadStats = useCallback(async () => {
+    const { data: userData } = await supabase.auth.getUser()
+    if (!userData.user) {
+      router.push('/login')
+      return
+    }
+
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('auth_id', userData.user.id)
+      .single()
+
+    if (!customer) {
+      setLoading(false)
+      return
+    }
+
+    const { data: totes } = await supabase
+      .from('totes')
+      .select('status, items')
+      .eq('customer_id', customer.id)
+
+    if (totes) {
+      const storedInWarehouse = totes.filter(
+        t => t.status === 'stored' || t.status === 'ready_to_stow' || t.status === 'pending_pick' || t.status === 'picked'
+      ).length
+
+      const atHome = totes.filter(t => t.status === 'empty_at_customer')
+      const emptyAtHome = atHome.filter(t => !t.items || (t.items as []).length === 0).length
+      const fullAtHome = atHome.filter(t => t.items && (t.items as []).length > 0).length
+
+      setStats({ storedInWarehouse, fullAtHome, emptyAtHome })
+    }
+
+    setLoading(false)
+  }, [supabase, router])
+
+  // Load on mount
+  useEffect(() => { loadStats() }, [loadStats])
+
+  // Refresh when tab becomes visible again (returning from Add Items etc.)
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') loadStats()
     }
     document.addEventListener('visibilitychange', handleVisibility)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
-  }, [])
-
-  useEffect(() => {
-    async function loadStats() {
-      const { data: userData } = await supabase.auth.getUser()
-      if (!userData.user) {
-        router.push('/login')
-        return
-      }
-
-      // Look up customer record
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('auth_id', userData.user.id)
-        .single()
-
-      if (!customer) {
-        setLoading(false)
-        return
-      }
-
-      // Fetch totes for this customer
-      const { data: totes } = await supabase
-        .from('totes')
-        .select('status')
-        .eq('customer_id', customer.id)
-
-      if (totes) {
-        const storedInWarehouse = (totes as Pick<Tote, 'status'>[]).filter(
-          t => t.status === 'stored' || t.status === 'ready_to_stow'
-        ).length
-
-        // Totes at home that have items = "full"
-        // For now we treat any non-empty, non-warehouse status that's customer-side as "at home"
-        const atHomeTotes = (totes as Pick<Tote, 'status'>[]).filter(
-          t => t.status === 'empty_at_customer'
-        )
-        const emptyAtHome = atHomeTotes.length
-
-        // In a real system we'd check if items.length > 0, but status covers this
-        const fullAtHome = (totes as Pick<Tote, 'status'>[]).filter(
-          t => t.status === 'pending_pick' || t.status === 'picked'
-        ).length
-
-        setStats({ storedInWarehouse, fullAtHome, emptyAtHome })
-      }
-
-      setLoading(false)
-    }
-
-    loadStats()
-  }, [supabase, router])
+  }, [loadStats])
 
   return (
     <div className="px-5 pt-6 pb-6 space-y-6">
