@@ -143,9 +143,26 @@ export default function AddItemsPage() {
 
       if (!customer) throw new Error('Customer record not found')
 
-      if (isNewTote) {
-        // Create new tote
-        const toteId = `TV-${Math.floor(1000 + Math.random() * 9000)}`
+      // Determine tote ID: use scanned barcode if provided, otherwise generate one
+      const toteId = barcodeValue.trim() || `TV-${Math.floor(1000 + Math.random() * 9000)}`
+
+      // Check if tote already exists in DB
+      const { data: existingTote } = await supabase
+        .from('totes')
+        .select('id, items')
+        .eq('id', toteId)
+        .single()
+
+      if (existingTote) {
+        // Tote exists — merge items in
+        const mergedItems = [...(existingTote.items as ToteItem[]), ...items.filter(i => i.label.trim())]
+        const { error: updateError } = await supabase
+          .from('totes')
+          .update({ items: mergedItems, tote_name: toteName, last_scan_date: new Date().toISOString() })
+          .eq('id', existingTote.id)
+        if (updateError) throw updateError
+      } else {
+        // New tote — create it
         const { error: insertError } = await supabase.from('totes').insert({
           id: toteId,
           customer_id: customer.id,
@@ -158,22 +175,6 @@ export default function AddItemsPage() {
           items: items.filter(i => i.label.trim()),
         })
         if (insertError) throw insertError
-      } else {
-        // Add items to existing tote by barcode
-        const { data: existingTote } = await supabase
-          .from('totes')
-          .select('id, items')
-          .eq('id', barcodeValue)
-          .single()
-
-        if (existingTote) {
-          const mergedItems = [...(existingTote.items as ToteItem[]), ...items.filter(i => i.label.trim())]
-          const { error: updateError } = await supabase
-            .from('totes')
-            .update({ items: mergedItems, last_scan_date: new Date().toISOString() })
-            .eq('id', existingTote.id)
-          if (updateError) throw updateError
-        }
       }
 
       setStep('done')
@@ -566,7 +567,7 @@ export default function AddItemsPage() {
               Add Another Tote
             </button>
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => { router.push('/dashboard'); router.refresh() }}
               className="btn-outline w-full"
             >
               Back to Dashboard
