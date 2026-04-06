@@ -4,12 +4,13 @@ import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { LayoutDashboard, ScanLine, ClipboardList, BarChart2, LogOut, Warehouse } from 'lucide-react'
+import { LayoutDashboard, ScanLine, ClipboardList, ArrowLeftRight, BarChart2, LogOut, Warehouse } from 'lucide-react'
 
 const navItems = [
   { href: '/warehouse', label: 'Home', icon: LayoutDashboard, exact: true },
-  { href: '/warehouse/scan-store', label: 'Scan & Store', icon: ScanLine, exact: false },
+  { href: '/warehouse/scan-store', label: 'Receive', icon: ScanLine, exact: false },
   { href: '/warehouse/pick-lists', label: 'Pick Lists', icon: ClipboardList, exact: false },
+  { href: '/warehouse/sort', label: 'Sort', icon: ArrowLeftRight, exact: false },
   { href: '/warehouse/reports', label: 'Reports', icon: BarChart2, exact: false },
 ]
 
@@ -71,7 +72,7 @@ export default function WarehouseLayout({ children }: { children: React.ReactNod
                 <Link
                   key={href}
                   href={href}
-                  className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl min-w-[72px] transition-colors duration-150 ${
+                  className={`flex flex-col items-center gap-1 px-1 py-2 rounded-xl min-w-[58px] transition-colors duration-150 ${
                     active ? 'text-brand-navy' : 'text-gray-400 hover:text-gray-600'
                   }`}
                 >
