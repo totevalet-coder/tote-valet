@@ -11,6 +11,7 @@ const STATUS_CONFIG: Record<
   { label: string; bg: string; text: string }
 > = {
   stored: { label: 'In Warehouse', bg: 'bg-blue-100', text: 'text-blue-700' },
+  full_at_customer: { label: 'At Home (Full)', bg: 'bg-green-100', text: 'text-green-700' },
   in_transit: { label: 'In Transit', bg: 'bg-yellow-100', text: 'text-yellow-700' },
   empty_at_customer: { label: 'At Home (Empty)', bg: 'bg-gray-100', text: 'text-gray-600' },
   ready_to_stow: { label: 'Ready to Stow', bg: 'bg-purple-100', text: 'text-purple-700' },
@@ -28,7 +29,13 @@ function getToteEmoji(id: string) {
 }
 
 export default function ToteCard({ tote, onClick }: ToteCardProps) {
-  const statusCfg = STATUS_CONFIG[tote.status] ?? {
+  // For totes at home, show Full vs Empty based on whether items are logged
+  const effectiveStatus =
+    tote.status === 'empty_at_customer' && tote.items.length > 0
+      ? 'full_at_customer'
+      : tote.status
+
+  const statusCfg = STATUS_CONFIG[effectiveStatus] ?? STATUS_CONFIG[tote.status] ?? {
     label: tote.status,
     bg: 'bg-gray-100',
     text: 'text-gray-600',

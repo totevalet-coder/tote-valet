@@ -9,6 +9,7 @@ import type { Tote } from '@/types/database'
 
 interface ToteStats {
   storedInWarehouse: number
+  inTransit: number
   fullAtHome: number
   emptyAtHome: number
 }
@@ -18,6 +19,7 @@ export default function DashboardPage() {
   const supabase = createClient()
   const [stats, setStats] = useState<ToteStats>({
     storedInWarehouse: 0,
+    inTransit: 0,
     fullAtHome: 0,
     emptyAtHome: 0,
   })
@@ -51,11 +53,13 @@ export default function DashboardPage() {
         t => t.status === 'stored' || t.status === 'ready_to_stow' || t.status === 'pending_pick' || t.status === 'picked'
       ).length
 
+      const inTransit = totes.filter(t => t.status === 'in_transit').length
+
       const atHome = totes.filter(t => t.status === 'empty_at_customer')
       const emptyAtHome = atHome.filter(t => !t.items || (t.items as []).length === 0).length
       const fullAtHome = atHome.filter(t => t.items && (t.items as []).length > 0).length
 
-      setStats({ storedInWarehouse, fullAtHome, emptyAtHome })
+      setStats({ storedInWarehouse, inTransit, fullAtHome, emptyAtHome })
     }
 
     setLoading(false)
@@ -81,31 +85,48 @@ export default function DashboardPage() {
           Your Totes
         </h2>
         {loading ? (
-          <div className="flex gap-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="flex-1 h-24 bg-gray-200 rounded-2xl animate-pulse" />
-            ))}
+          <div className="space-y-3">
+            <div className="flex gap-3">
+              {[1, 2].map(i => (
+                <div key={i} className="flex-1 h-24 bg-gray-200 rounded-2xl animate-pulse" />
+              ))}
+            </div>
+            <div className="flex gap-3">
+              {[3, 4].map(i => (
+                <div key={i} className="flex-1 h-24 bg-gray-200 rounded-2xl animate-pulse" />
+              ))}
+            </div>
           </div>
         ) : (
-          <div className="flex gap-3">
-            <StatBox
-              label="Stored in Warehouse"
-              value={stats.storedInWarehouse}
-              emoji="🏢"
-              colorClass="text-brand-blue"
-            />
-            <StatBox
-              label="Full Totes at Home"
-              value={stats.fullAtHome}
-              emoji="📦"
-              colorClass="text-brand-navy"
-            />
-            <StatBox
-              label="Empty Totes at Home"
-              value={stats.emptyAtHome}
-              emoji="🗃️"
-              colorClass="text-gray-500"
-            />
+          <div className="space-y-3">
+            <div className="flex gap-3">
+              <StatBox
+                label="Stored in Warehouse"
+                value={stats.storedInWarehouse}
+                emoji="🏢"
+                colorClass="text-brand-blue"
+              />
+              <StatBox
+                label="In Transit"
+                value={stats.inTransit}
+                emoji="🚐"
+                colorClass="text-yellow-600"
+              />
+            </div>
+            <div className="flex gap-3">
+              <StatBox
+                label="Full Totes at Home"
+                value={stats.fullAtHome}
+                emoji="📦"
+                colorClass="text-brand-navy"
+              />
+              <StatBox
+                label="Empty Totes at Home"
+                value={stats.emptyAtHome}
+                emoji="🗃️"
+                colorClass="text-gray-500"
+              />
+            </div>
           </div>
         )}
       </section>
