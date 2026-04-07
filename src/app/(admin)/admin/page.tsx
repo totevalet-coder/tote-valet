@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, CreditCard, Package } from 'lucide-react'
+import { AlertTriangle, CreditCard, Package, ClipboardList, Loader2, CheckCircle2 } from 'lucide-react'
 
 interface AdminStats {
   mrr: number
@@ -25,6 +25,8 @@ export default function AdminHomePage() {
   const supabase = createClient()
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [generating, setGenerating] = useState(false)
+  const [generatedId, setGeneratedId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser()
@@ -75,6 +77,67 @@ export default function AdminHomePage() {
   }, [supabase, router])
 
   useEffect(() => { load() }, [load])
+
+  async function generatePickList() {
+    setGenerating(true)
+    setGeneratedId(null)
+
+    // Find all pending_pick totes
+    const { data: totes } = await supabase
+      .from('totes')
+      .select('id, bin_location, customer_id')
+      .eq('status', 'pending_pick')
+
+    if (!totes || totes.length === 0) {
+      alert('No totes are currently pending pick.')
+      setGenerating(false)
+      return
+    }
+
+    // Get customer names
+    const customerIds = [...new Set(totes.map(t => t.customer_id))]
+    const { data: customers } = await supabase
+      .from('customers').select('id, name').in('id', customerIds)
+    const nameMap: Record<string, string> = {}
+    ;(customers ?? []).forEach(c => { nameMap[c.id] = c.name })
+
+    // Group by bin
+    const binMap: Record<string, { tote_id: string; customer_name: string; status: string }[]> = {}
+    for (const tote of totes) {
+      const bin = tote.bin_location ?? 'UNASSIGNED'
+      if (!binMap[bin]) binMap[bin] = []
+      binMap[bin].push({ tote_id: tote.id, customer_name: nameMap[tote.customer_id] ?? '', status: 'pending' })
+    }
+
+    // Build ID: PL-YYYY-DDD, suffix -B if collision
+    const now = new Date()
+    const year = now.getFullYear()
+    const dayOfYear = Math.floor((now.getTime() - new Date(year, 0, 0).getTime()) / 86400000)
+    const baseId = `PL-${year}-${String(dayOfYear).padStart(3, '0')}`
+    const { data: existing } = await supabase.from('pick_lists').select('id').eq('id', baseId).maybeSingle()
+    const id = existing ? `${baseId}-B` : baseId
+
+    const bins = Object.entries(binMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([bin_id, toteList]) => ({ bin_id, totes: toteList }))
+
+    const { data: userData } = await supabase.auth.getUser()
+    const { error } = await supabase.from('pick_lists').insert({
+      id,
+      generated_by: userData.user?.id ?? 'admin',
+      generated_at: now.toISOString(),
+      status: 'ready',
+      assigned_to: null,
+      bins,
+      completed_at: null,
+    })
+
+    if (!error) {
+      setGeneratedId(id)
+      load()
+    }
+    setGenerating(false)
+  }
 
   if (loading) {
     return (
@@ -140,6 +203,36 @@ export default function AdminHomePage() {
               <p className="text-xs text-gray-500 mt-1 leading-tight">{label}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Quick Actions */}
+      <section>
+        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Quick Actions</h2>
+        <div className="space-y-2">
+          {generatedId && (
+            <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
+              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-bold text-green-800">Pick List {generatedId} created</p>
+                <p className="text-xs text-green-600">Warehouse can now start picking</p>
+              </div>
+              <button onClick={() => setGeneratedId(null)} className="text-green-400 hover:text-green-600 text-lg leading-none">×</button>
+            </div>
+          )}
+          <button
+            onClick={generatePickList}
+            disabled={generating}
+            className="w-full flex items-center gap-4 bg-white border-2 border-brand-blue text-brand-navy rounded-2xl px-5 py-4 hover:bg-blue-50 active:scale-[0.98] transition-all disabled:opacity-60"
+          >
+            <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center flex-shrink-0">
+              {generating ? <Loader2 className="w-5 h-5 text-brand-blue animate-spin" /> : <ClipboardList className="w-5 h-5 text-brand-blue" />}
+            </div>
+            <div className="text-left">
+              <p className="font-bold text-sm">{generating ? 'Generating…' : 'Generate Pick List'}</p>
+              <p className="text-xs text-gray-400">Pulls all pending-pick totes from warehouse</p>
+            </div>
+          </button>
         </div>
       </section>
 

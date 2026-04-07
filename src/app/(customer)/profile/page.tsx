@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, Loader2, CheckCircle2, User } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronLeft, Loader2, CheckCircle2, User, KeyRound } from 'lucide-react'
 import type { Customer } from '@/types/database'
 
 export default function ProfilePage() {
@@ -176,6 +177,14 @@ export default function ProfilePage() {
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             Save Changes
           </button>
+
+          <Link
+            href="/forgot-password"
+            className="w-full flex items-center justify-center gap-2 border-2 border-gray-200 text-gray-600 rounded-xl py-3 text-sm font-bold hover:border-brand-navy hover:text-brand-navy transition-colors"
+          >
+            <KeyRound className="w-4 h-4" />
+            Change Password
+          </Link>
         </form>
       )}
     </div>
