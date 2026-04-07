@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Customer, UserRole } from '@/types/database'
-import { Save, UserPlus, ChevronRight } from 'lucide-react'
+import { Save, UserPlus, ChevronRight, Send, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 
 type SettingsTab = 'pricing' | 'users' | 'notifications' | 'system'
 
@@ -37,6 +37,11 @@ function SettingsContent() {
   const [notifToggles, setNotifToggles] = useState<Record<string, boolean>>(
     Object.fromEntries(NOTIF_RULES.map(r => [r.label, true]))
   )
+
+  // Test SMS
+  const [testPhone, setTestPhone] = useState('')
+  const [testSending, setTestSending] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const loadStaff = useCallback(async () => {
     const { data } = await supabase.from('customers').select('*').neq('role', 'customer').order('name')
@@ -148,7 +153,70 @@ function SettingsContent() {
 
       {/* Notifications */}
       {tab === 'notifications' && (
-        <div className="space-y-3">
+        <div className="space-y-4">
+
+          {/* Twilio status + test */}
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="font-bold text-brand-navy text-sm">SMS via Twilio</p>
+              <span className="text-xs text-gray-400">Add credentials to .env.local</span>
+            </div>
+
+            <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-xs font-mono text-gray-500">
+              <p>TWILIO_ACCOUNT_SID=AC…</p>
+              <p>TWILIO_AUTH_TOKEN=…</p>
+              <p>TWILIO_PHONE_NUMBER=+1…</p>
+            </div>
+
+            {/* Test SMS */}
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-semibold text-gray-600">Send a test message</p>
+              <input
+                type="tel"
+                value={testPhone}
+                onChange={e => { setTestPhone(e.target.value); setTestResult(null) }}
+                placeholder="+1 (555) 000-0000"
+                className="input-field text-sm"
+              />
+              {testResult && (
+                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl ${testResult.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {testResult.ok
+                    ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    : <XCircle className="w-4 h-4 flex-shrink-0" />}
+                  {testResult.msg}
+                </div>
+              )}
+              <button
+                disabled={!testPhone || testSending}
+                onClick={async () => {
+                  setTestSending(true)
+                  setTestResult(null)
+                  try {
+                    const res = await fetch('/api/send-sms', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ to: testPhone, message: 'Tote Valet: This is a test message from your admin panel. SMS is working correctly! 📦' }),
+                    })
+                    const data = await res.json()
+                    if (res.ok) {
+                      setTestResult({ ok: true, msg: `Sent! SID: ${data.sid}` })
+                    } else {
+                      setTestResult({ ok: false, msg: data.error ?? 'Failed to send' })
+                    }
+                  } catch {
+                    setTestResult({ ok: false, msg: 'Network error' })
+                  }
+                  setTestSending(false)
+                }}
+                className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white rounded-xl py-2.5 text-sm font-bold disabled:opacity-50 hover:bg-blue-900 transition-colors"
+              >
+                {testSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {testSending ? 'Sending…' : 'Send Test SMS'}
+              </button>
+            </div>
+          </div>
+
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Notification Rules</p>
           {NOTIF_RULES.map(rule => (
             <div key={rule.label} className="card flex items-center gap-3">
               <div className="flex-1 min-w-0">

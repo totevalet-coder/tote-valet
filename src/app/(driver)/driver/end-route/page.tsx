@@ -71,31 +71,37 @@ export default function EndRoutePage() {
       completed_at: new Date().toISOString(),
     }).eq('id', route.id)
 
-    // Create in-app notifications for each customer
-    const notifInserts: {
-      customer_id: string; title: string; body: string; type: string
-    }[] = []
+    // Send notifications (in-app + SMS) for each completed stop
+    const notifyPromises: Promise<Response>[] = []
     for (const stop of stops) {
       if (!stop.completed || stop.force_completed) continue
+      const count = stop.tote_ids.length
+      const plural = count !== 1 ? 's' : ''
       if (stop.type === 'delivery') {
-        notifInserts.push({
-          customer_id: stop.customer_id,
-          title: 'Your tote was delivered 📦',
-          body: `${stop.tote_ids.length} tote${stop.tote_ids.length !== 1 ? 's' : ''} delivered to your address today.`,
-          type: 'tote_delivery',
-        })
+        notifyPromises.push(fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_id: stop.customer_id,
+            title: 'Your tote was delivered 📦',
+            body: `${count} tote${plural} delivered to your address today.`,
+            type: 'tote_delivery',
+          }),
+        }))
       } else if (stop.type === 'pickup') {
-        notifInserts.push({
-          customer_id: stop.customer_id,
-          title: 'Your tote was picked up 🚐',
-          body: `${stop.tote_ids.length} tote${stop.tote_ids.length !== 1 ? 's' : ''} picked up and on the way to storage.`,
-          type: 'tote_pickup',
-        })
+        notifyPromises.push(fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_id: stop.customer_id,
+            title: 'Your tote was picked up 🚐',
+            body: `${count} tote${plural} picked up and on the way to storage.`,
+            type: 'tote_pickup',
+          }),
+        }))
       }
     }
-    if (notifInserts.length > 0) {
-      await supabase.from('notifications').insert(notifInserts)
-    }
+    await Promise.all(notifyPromises)
 
     setSyncResult({
       delivered,
