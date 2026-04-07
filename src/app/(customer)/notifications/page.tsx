@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import type { ComponentType } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Bell, CheckCheck, Package, Truck, AlertCircle, DollarSign } from 'lucide-react'
 
@@ -14,7 +15,9 @@ interface AppNotification {
   created_at: string
 }
 
-const TYPE_ICON: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+type IconComponent = ComponentType<{ className?: string }>
+
+const TYPE_ICON: Record<string, { icon: IconComponent; color: string; bg: string }> = {
   tote_pickup:    { icon: Truck,         color: 'text-yellow-600', bg: 'bg-yellow-100' },
   tote_delivery:  { icon: Package,       color: 'text-brand-blue', bg: 'bg-blue-100' },
   failed_payment: { icon: DollarSign,    color: 'text-red-600',    bg: 'bg-red-100' },
