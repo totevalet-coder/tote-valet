@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { ChevronLeft, Loader2, CheckCircle2, User, KeyRound } from 'lucide-react'
+import AddressInput from '@/components/ui/AddressInput'
 import type { Customer } from '@/types/database'
 
 export default function ProfilePage() {
@@ -142,11 +143,9 @@ export default function ProfilePage() {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Service Address</label>
-            <input
-              type="text"
+            <AddressInput
               value={address}
-              onChange={e => setAddress(e.target.value)}
-              className="input-field"
+              onChange={setAddress}
               placeholder="123 Main St, City, State"
             />
           </div>

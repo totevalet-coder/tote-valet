@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, Loader2, CreditCard, CheckCircle2 } from 'lucide-react'
+import AddressInput from '@/components/ui/AddressInput'
 
 type Step = 1 | 2 | 3 | 'done'
 
@@ -185,8 +186,11 @@ function RegisterForm() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Service Address</label>
-                <input type="text" value={data.address} onChange={e => update('address', e.target.value)}
-                  placeholder="123 Main St, Coopersburg, PA" className="input-field" />
+                <AddressInput
+                  value={data.address}
+                  onChange={val => update('address', val)}
+                  placeholder="123 Main St, Coopersburg, PA"
+                />
               </div>
 
               {/* Only show email/password for non-OAuth signups */}

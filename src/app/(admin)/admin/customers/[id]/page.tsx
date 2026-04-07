@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Customer, Tote, UserRole } from '@/types/database'
 import { ChevronLeft, Edit2, Package, FileText, StickyNote, Save } from 'lucide-react'
+import AddressInput from '@/components/ui/AddressInput'
 
 const ROLES: UserRole[] = ['customer', 'driver', 'warehouse', 'sorter', 'admin']
 
@@ -158,13 +159,21 @@ export default function CustomerDetailPage() {
       {editing && (
         <div className="card space-y-3">
           <h3 className="font-bold text-brand-navy text-sm">Edit Info</h3>
-          {(['name', 'email', 'phone', 'address'] as const).map(field => (
+          {(['name', 'email', 'phone'] as const).map(field => (
             <div key={field}>
               <label className="block text-xs font-semibold text-gray-500 mb-1 capitalize">{field}</label>
               <input type="text" value={editData[field]} onChange={e => setEditData(prev => ({ ...prev, [field]: e.target.value }))}
                 className="input-field" />
             </div>
           ))}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Service Address</label>
+            <AddressInput
+              value={editData.address}
+              onChange={val => setEditData(prev => ({ ...prev, address: val }))}
+              placeholder="123 Main St, City, State"
+            />
+          </div>
           <button onClick={saveInfo} disabled={saving} className="btn-primary w-full">
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
