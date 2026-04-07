@@ -71,6 +71,32 @@ export default function EndRoutePage() {
       completed_at: new Date().toISOString(),
     }).eq('id', route.id)
 
+    // Create in-app notifications for each customer
+    const notifInserts: {
+      customer_id: string; title: string; body: string; type: string
+    }[] = []
+    for (const stop of stops) {
+      if (!stop.completed || stop.force_completed) continue
+      if (stop.type === 'delivery') {
+        notifInserts.push({
+          customer_id: stop.customer_id,
+          title: 'Your tote was delivered 📦',
+          body: `${stop.tote_ids.length} tote${stop.tote_ids.length !== 1 ? 's' : ''} delivered to your address today.`,
+          type: 'tote_delivery',
+        })
+      } else if (stop.type === 'pickup') {
+        notifInserts.push({
+          customer_id: stop.customer_id,
+          title: 'Your tote was picked up 🚐',
+          body: `${stop.tote_ids.length} tote${stop.tote_ids.length !== 1 ? 's' : ''} picked up and on the way to storage.`,
+          type: 'tote_pickup',
+        })
+      }
+    }
+    if (notifInserts.length > 0) {
+      await supabase.from('notifications').insert(notifInserts)
+    }
+
     setSyncResult({
       delivered,
       pickedUp,

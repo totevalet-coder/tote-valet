@@ -116,7 +116,7 @@ function SettingsContent() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-gray-600">{staff.length} staff accounts</p>
-            <button onClick={() => router.push('/admin/customers/new')}
+            <button onClick={() => router.push('/admin/staff/new')}
               className="flex items-center gap-1.5 bg-brand-navy text-white rounded-xl px-3 py-2 text-sm font-bold">
               <UserPlus className="w-4 h-4" /> Add Staff
             </button>

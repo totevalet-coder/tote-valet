@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -17,10 +17,10 @@ import {
 } from 'lucide-react'
 
 const MENU_ITEMS = [
-  { icon: User, label: 'My Profile', href: '/profile' },
-  { icon: CreditCard, label: 'Billing & Invoice', href: '/billing' },
-  { icon: Bell, label: 'Notifications', href: '/notifications' },
-  { icon: HelpCircle, label: 'Help & Support', href: '/help' },
+  { icon: User,       label: 'My Profile',        href: '/profile' },
+  { icon: CreditCard, label: 'Billing & Invoice',  href: '/billing' },
+  { icon: Bell,       label: 'Notifications',      href: '/notifications' },
+  { icon: HelpCircle, label: 'Help & Support',     href: '/help' },
 ]
 
 function HamburgerMenu({
@@ -44,15 +44,11 @@ function HamburgerMenu({
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/40 z-40 transition-opacity duration-200"
         onClick={onClose}
       />
-
-      {/* Drawer */}
       <div className="fixed top-0 right-0 h-full w-72 max-w-[80vw] bg-white z-50 shadow-2xl flex flex-col">
-        {/* Header */}
         <div className="bg-brand-navy px-6 pt-12 pb-6">
           <div className="flex items-center justify-between">
             <div>
@@ -68,7 +64,6 @@ function HamburgerMenu({
           </div>
         </div>
 
-        {/* Nav items */}
         <nav className="flex-1 px-4 py-4 space-y-1">
           {MENU_ITEMS.map(({ icon: Icon, label, href }) => (
             <Link
@@ -84,7 +79,6 @@ function HamburgerMenu({
           ))}
         </nav>
 
-        {/* Sign out */}
         <div className="px-4 pb-8 border-t border-gray-100 pt-4">
           <button
             onClick={handleSignOut}
@@ -100,21 +94,38 @@ function HamburgerMenu({
 }
 
 export default function CustomerLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const [userName, setUserName] = useState('Customer')
+  const [unreadCount, setUnreadCount] = useState(0)
   const supabase = createClient()
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        const name =
-          data.user.user_metadata?.full_name ||
-          data.user.email?.split('@')[0] ||
-          'Customer'
-        setUserName(name)
-      }
-    })
+  const loadUnread = useCallback(async (customerId: string) => {
+    const { count } = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('customer_id', customerId)
+      .eq('read', false)
+    setUnreadCount(count ?? 0)
   }, [supabase])
+
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return
+      const name =
+        data.user.user_metadata?.full_name ||
+        data.user.email?.split('@')[0] ||
+        'Customer'
+      setUserName(name)
+
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('auth_id', data.user.id)
+        .single()
+      if (customer) loadUnread(customer.id)
+    })
+  }, [supabase, loadUnread])
 
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center">
@@ -127,10 +138,26 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
             </div>
             <span className="text-white font-black text-lg tracking-tight">Tote Valet</span>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-white/80 text-sm font-medium">
+          <div className="flex items-center gap-2">
+            <span className="text-white/80 text-sm font-medium mr-1">
               Hi, {userName.split(' ')[0]}
             </span>
+
+            {/* Bell with unread badge */}
+            <button
+              onClick={() => router.push('/notifications')}
+              className="relative w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+              aria-label="Notifications"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 rounded-full text-[10px] font-black flex items-center justify-center px-1">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Hamburger */}
             <button
               onClick={() => setMenuOpen(true)}
               className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors"
@@ -141,15 +168,12 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
           </div>
         </header>
 
-        {/* Page content */}
         <main className="pb-24 min-h-screen">
           {children}
         </main>
 
-        {/* Bottom nav */}
         <BottomNav />
 
-        {/* Hamburger drawer */}
         <HamburgerMenu
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
