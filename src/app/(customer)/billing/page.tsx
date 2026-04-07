@@ -3,8 +3,17 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, Download, Clock, CreditCard, Gift } from 'lucide-react'
+import { ChevronLeft, Download, Clock, CreditCard, Gift, CheckCircle2, Plus } from 'lucide-react'
 import type { Tote } from '@/types/database'
+import CardSetupForm from '@/components/ui/CardSetupForm'
+import type { CardSetupResult } from '@/components/ui/CardSetupForm'
+
+interface CardInfo {
+  last4: string
+  brand: string
+  exp_month: number
+  exp_year: number
+}
 
 interface BillingLine {
   toteName: string
@@ -22,6 +31,10 @@ export default function BillingPage() {
   const [totes, setTotes] = useState<Tote[]>([])
   const [freeExchangesUsed, setFreeExchangesUsed] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [customerId, setCustomerId] = useState<string | null>(null)
+  const [cardInfo, setCardInfo] = useState<CardInfo | null>(null)
+  const [showCardSetup, setShowCardSetup] = useState(false)
+  const [cardSaved, setCardSaved] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -36,7 +49,13 @@ export default function BillingPage() {
 
       if (!customer) { setLoading(false); return }
 
+      setCustomerId(customer.id)
       setFreeExchangesUsed(customer.free_exchanges_used ?? 0)
+
+      // Fetch card info from Stripe
+      fetch(`/api/stripe/card-info?customerId=${customer.id}`)
+        .then(r => r.json())
+        .then(d => { if (d.card) setCardInfo(d.card) })
 
       const { data: totesData } = await supabase
         .from('totes')
@@ -183,6 +202,65 @@ export default function BillingPage() {
                 />
               ))}
             </div>
+          </div>
+
+          {/* Payment Method */}
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="font-bold text-brand-navy text-sm">Payment Method</p>
+              {cardInfo && (
+                <button onClick={() => { setShowCardSetup(true); setCardSaved(false) }}
+                  className="text-xs text-brand-blue font-semibold hover:underline">
+                  Update
+                </button>
+              )}
+            </div>
+
+            {cardSaved && (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+                <CheckCircle2 className="w-4 h-4 text-green-600" />
+                <p className="text-sm font-semibold text-green-700">Card updated successfully</p>
+              </div>
+            )}
+
+            {showCardSetup && customerId ? (
+              <CardSetupForm
+                customerId={customerId}
+                submitLabel="Save Card"
+                onSuccess={async (result: CardSetupResult) => {
+                  await fetch('/api/stripe/save-card', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customerId, paymentMethodId: result.paymentMethodId, stripeCustomerId: result.stripeCustomerId }),
+                  })
+                  const d = await fetch(`/api/stripe/card-info?customerId=${customerId}`).then(r => r.json())
+                  if (d.card) setCardInfo(d.card)
+                  setShowCardSetup(false)
+                  setCardSaved(true)
+                }}
+                onCancel={() => setShowCardSetup(false)}
+              />
+            ) : cardInfo ? (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center">
+                  <CreditCard className="w-5 h-5 text-brand-blue" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-brand-navy capitalize">
+                    {cardInfo.brand} •••• {cardInfo.last4}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    Expires {cardInfo.exp_month}/{cardInfo.exp_year}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setShowCardSetup(true)}
+                className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-xl py-4 text-sm font-semibold text-gray-500 hover:border-brand-blue hover:text-brand-blue transition-colors">
+                <Plus className="w-4 h-4" />
+                Add Payment Method
+              </button>
+            )}
           </div>
 
           {/* Actions */}

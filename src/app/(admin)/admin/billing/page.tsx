@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Customer } from '@/types/database'
-import { DollarSign, AlertTriangle, Package } from 'lucide-react'
+import { DollarSign, AlertTriangle, Package, Loader2, CheckCircle2 } from 'lucide-react'
 
 type BillingTab = 'summary' | 'by-customer' | 'failed' | 'missing-totes'
 
@@ -15,6 +15,25 @@ function BillingContent() {
   const [tab, setTab] = useState<BillingTab>((searchParams.get('tab') as BillingTab) ?? 'summary')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
+  const [charging, setCharging] = useState<Record<string, boolean>>({})
+  const [chargeResults, setChargeResults] = useState<Record<string, { ok: boolean; msg: string }>>({})
+
+  async function chargeCustomer(customerId: string) {
+    setCharging(prev => ({ ...prev, [customerId]: true }))
+    setChargeResults(prev => { const n = { ...prev }; delete n[customerId]; return n })
+    const res = await fetch('/api/stripe/charge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId }),
+    })
+    const data = await res.json()
+    setChargeResults(prev => ({
+      ...prev,
+      [customerId]: { ok: res.ok, msg: res.ok ? 'Charged successfully' : (data.error ?? 'Charge failed') },
+    }))
+    setCharging(prev => ({ ...prev, [customerId]: false }))
+    if (res.ok) load()
+  }
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('customers').select('*').eq('role', 'customer').order('name')
@@ -141,10 +160,17 @@ function BillingContent() {
                 <span className="ml-auto font-bold text-red-600">${(c.monthly_total ?? 0).toFixed(2)}</span>
               </div>
               <p className="text-xs text-gray-500">{c.email}</p>
+              {chargeResults[c.id] && (
+                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl ${chargeResults[c.id].ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {chargeResults[c.id].ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                  {chargeResults[c.id].msg}
+                </div>
+              )}
               <div className="flex gap-2">
-                <button onClick={() => reactivate(c.id)}
-                  className="flex-1 bg-green-600 text-white rounded-xl py-2 text-xs font-bold hover:bg-green-700 transition-colors">
-                  Retry & Reactivate
+                <button onClick={() => chargeCustomer(c.id)} disabled={charging[c.id]}
+                  className="flex-1 bg-brand-blue text-white rounded-xl py-2 text-xs font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-1 disabled:opacity-60">
+                  {charging[c.id] && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Charge Now
                 </button>
                 <button onClick={() => suspend(c.id)}
                   className="flex-1 border-2 border-red-300 text-red-600 rounded-xl py-2 text-xs font-bold hover:bg-red-50 transition-colors">

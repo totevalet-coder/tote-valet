@@ -4,8 +4,10 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, Loader2, CreditCard, CheckCircle2 } from 'lucide-react'
+import { ChevronLeft, Loader2, CheckCircle2 } from 'lucide-react'
 import AddressInput from '@/components/ui/AddressInput'
+import CardSetupForm from '@/components/ui/CardSetupForm'
+import type { CardSetupResult } from '@/components/ui/CardSetupForm'
 
 type Step = 1 | 2 | 3 | 'done'
 
@@ -17,11 +19,14 @@ interface OnboardingData {
   password: string
   startingTotes: number
   firstPickupDate: string
+  stripeCustomerId: string
+  cardOnFile: string
 }
 
 const INITIAL_DATA: OnboardingData = {
   name: '', phone: '', address: '', email: '', password: '',
   startingTotes: 2, firstPickupDate: '',
+  stripeCustomerId: '', cardOnFile: '',
 }
 
 function RegisterForm() {
@@ -98,7 +103,8 @@ function RegisterForm() {
           email: data.email,
           phone: data.phone,
           address: data.address,
-          card_on_file: null,
+          card_on_file: data.cardOnFile || null,
+          stripe_customer_id: data.stripeCustomerId || null,
           monthly_total: 0,
           status: 'active',
           role: 'customer',
@@ -242,42 +248,40 @@ function RegisterForm() {
             </div>
           )}
 
-          {/* Step 2: Payment placeholder */}
+          {/* Step 2: Payment */}
           {step === 2 && (
             <div className="space-y-4">
-              <h2 className="text-lg font-bold text-brand-navy">Payment Setup</h2>
-              <p className="text-sm text-gray-500">
-                Your card will only be charged starting on your first pickup date.
-              </p>
-              <div className="bg-brand-blue/5 border-2 border-brand-blue/20 rounded-2xl p-5 text-center">
-                <CreditCard className="w-10 h-10 text-brand-blue mx-auto mb-3" />
-                <p className="text-brand-navy font-bold text-sm">Secure Payment via Stripe</p>
-                <p className="text-gray-500 text-xs mt-1 leading-relaxed">
-                  Full payment setup will be added shortly. Billing activates on your first pickup — $15/tote/month.
+              <div>
+                <h2 className="text-lg font-bold text-brand-navy">Payment Setup</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Your card won&apos;t be charged until your first pickup. $15/tote/month after that.
                 </p>
-                <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
-                  <p className="text-yellow-700 text-xs font-medium">
-                    Stripe integration coming soon — your spot is reserved!
-                  </p>
-                </div>
               </div>
-              <div className="space-y-3 opacity-40 pointer-events-none select-none">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Card Number</label>
-                  <input type="text" placeholder="•••• •••• •••• ••••" className="input-field" readOnly />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Expiry</label>
-                    <input type="text" placeholder="MM / YY" className="input-field" readOnly />
+
+              {data.cardOnFile ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-2xl px-4 py-4">
+                    <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-green-800">Card saved successfully</p>
+                      <p className="text-xs text-green-600">Your payment method is on file</p>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">CVV</label>
-                    <input type="text" placeholder="•••" className="input-field" readOnly />
-                  </div>
+                  <button onClick={nextStep} className="btn-primary w-full">Continue</button>
                 </div>
-              </div>
-              <button onClick={nextStep} className="btn-primary w-full">Continue</button>
+              ) : (
+                <CardSetupForm
+                  customerEmail={data.email}
+                  customerName={data.name}
+                  submitLabel="Save Card & Continue"
+                  onSuccess={(result: CardSetupResult) => {
+                    update('stripeCustomerId', result.stripeCustomerId)
+                    update('cardOnFile', result.paymentMethodId)
+                    // Save to DB immediately then advance
+                    nextStep()
+                  }}
+                />
+              )}
             </div>
           )}
 
