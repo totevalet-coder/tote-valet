@@ -35,6 +35,8 @@ export default function BillingPage() {
   const [cardInfo, setCardInfo] = useState<CardInfo | null>(null)
   const [showCardSetup, setShowCardSetup] = useState(false)
   const [cardSaved, setCardSaved] = useState(false)
+  const [startingTotes, setStartingTotes] = useState<number | null>(null)
+  const [firstPickupDate, setFirstPickupDate] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -43,7 +45,7 @@ export default function BillingPage() {
 
       const { data: customer } = await supabase
         .from('customers')
-        .select('id, free_exchanges_used')
+        .select('id, free_exchanges_used, notes')
         .eq('auth_id', userData.user.id)
         .single()
 
@@ -51,6 +53,14 @@ export default function BillingPage() {
 
       setCustomerId(customer.id)
       setFreeExchangesUsed(customer.free_exchanges_used ?? 0)
+
+      // Parse starting totes + first pickup from signup notes
+      if (customer.notes) {
+        const totesMatch = customer.notes.match(/Starting totes: (\d+)/)
+        const dateMatch = customer.notes.match(/First pickup: ([\d-]+)/)
+        if (totesMatch) setStartingTotes(parseInt(totesMatch[1]))
+        if (dateMatch) setFirstPickupDate(dateMatch[1])
+      }
 
       // Fetch card info from Stripe
       fetch(`/api/stripe/card-info?customerId=${customer.id}`)
@@ -123,17 +133,41 @@ export default function BillingPage() {
             <p className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
               Estimated This Month
             </p>
-            <p className="text-4xl font-black">${estimatedMonthly.toFixed(2)}</p>
-            <p className="text-white/50 text-xs mt-1">Auto-charged on the 1st of each month</p>
+            {totes.length === 0 && startingTotes ? (
+              <>
+                <p className="text-4xl font-black">${(startingTotes * 15).toFixed(2)}</p>
+                <p className="text-white/50 text-xs mt-1">Based on {startingTotes} starting tote{startingTotes !== 1 ? 's' : ''} — activates on first pickup</p>
+              </>
+            ) : (
+              <>
+                <p className="text-4xl font-black">${estimatedMonthly.toFixed(2)}</p>
+                <p className="text-white/50 text-xs mt-1">Auto-charged on the 1st of each month</p>
+              </>
+            )}
           </div>
 
-          {/* Auto-charge notice */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-start gap-3">
-            <CreditCard className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-            <p className="text-yellow-700 text-sm">
-              Your card on file will be auto-charged on the 1st of each month. Billing activates on your first pickup.
-            </p>
-          </div>
+          {/* Pending first delivery banner */}
+          {totes.length === 0 && firstPickupDate && (
+            <div className="bg-brand-blue/5 border border-brand-blue/20 rounded-xl px-4 py-3 flex items-start gap-3">
+              <CreditCard className="w-5 h-5 text-brand-blue flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-brand-navy font-semibold text-sm">First delivery scheduled</p>
+                <p className="text-gray-500 text-xs mt-0.5">
+                  {new Date(firstPickupDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} · Billing activates after pickup
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Auto-charge notice (only once totes are active) */}
+          {totes.length > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-start gap-3">
+              <CreditCard className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <p className="text-yellow-700 text-sm">
+                Your card on file will be auto-charged on the 1st of each month.
+              </p>
+            </div>
+          )}
 
           {/* Line items */}
           <div className="card divide-y divide-gray-50">
