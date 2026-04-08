@@ -135,8 +135,8 @@ export default function BillingPage() {
             </p>
             {totes.length === 0 && startingTotes ? (
               <>
-                <p className="text-4xl font-black">${(startingTotes * 15).toFixed(2)}</p>
-                <p className="text-white/50 text-xs mt-1">Based on {startingTotes} starting tote{startingTotes !== 1 ? 's' : ''} — activates on first pickup</p>
+                <p className="text-4xl font-black">${(startingTotes * 1).toFixed(2)}<span className="text-lg font-semibold text-white/60">/wk</span></p>
+                <p className="text-white/50 text-xs mt-1">{startingTotes} tote{startingTotes !== 1 ? 's' : ''} × $1/wk while at home · $15/mo once stored</p>
               </>
             ) : (
               <>
@@ -199,11 +199,11 @@ export default function BillingPage() {
             {/* Totals */}
             <div className="pt-3 space-y-1.5">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Storage totes ({billingLines.filter(l => l.chargeType === 'monthly').length} × $15/mo)</span>
-                <span className="font-semibold">${monthlyTotal.toFixed(2)}</span>
+                <span className="text-gray-500">Stored in warehouse ({billingLines.filter(l => l.chargeType === 'monthly').length} × $15/mo)</span>
+                <span className="font-semibold">${monthlyTotal.toFixed(2)}/mo</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Empty at home ({billingLines.filter(l => l.chargeType === 'weekly').length} × $1/wk)</span>
+                <span className="text-gray-500">At home ({billingLines.filter(l => l.chargeType === 'weekly').length} × $1/wk)</span>
                 <span className="font-semibold">${weeklyTotal.toFixed(2)}/wk</span>
               </div>
               <div className="flex justify-between text-sm font-bold text-brand-navy border-t border-gray-100 pt-2 mt-2">

@@ -304,7 +304,7 @@ function RegisterForm() {
                   ))}
                 </div>
                 <p className="text-xs text-gray-400 mt-2">
-                  $15/mo per stored tote · $1/wk per empty tote at home
+                  $1/wk per tote while at home · $15/mo per tote once stored
                 </p>
               </div>
               <div>
@@ -350,7 +350,11 @@ function RegisterForm() {
                   <span className="font-semibold text-brand-navy">{data.startingTotes}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Monthly storage</span>
+                  <span className="text-gray-500">While at home</span>
+                  <span className="font-semibold text-brand-navy">${(data.startingTotes * 1).toFixed(2)}/wk</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Once stored</span>
                   <span className="font-semibold text-brand-navy">${(data.startingTotes * 15).toFixed(2)}/mo</span>
                 </div>
               </div>
