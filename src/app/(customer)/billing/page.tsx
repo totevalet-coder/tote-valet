@@ -37,6 +37,8 @@ export default function BillingPage() {
   const [cardSaved, setCardSaved] = useState(false)
   const [startingTotes, setStartingTotes] = useState<number | null>(null)
   const [firstPickupDate, setFirstPickupDate] = useState<string | null>(null)
+  const [customerName, setCustomerName] = useState('')
+  const [customerAddress, setCustomerAddress] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -45,13 +47,15 @@ export default function BillingPage() {
 
       const { data: customer } = await supabase
         .from('customers')
-        .select('id, free_exchanges_used, notes')
+        .select('id, free_exchanges_used, notes, name, address')
         .eq('auth_id', userData.user.id)
         .single()
 
       if (!customer) { setLoading(false); return }
 
       setCustomerId(customer.id)
+      setCustomerName(customer.name ?? '')
+      setCustomerAddress(customer.address ?? '')
       setFreeExchangesUsed(customer.free_exchanges_used ?? 0)
 
       // Parse starting totes + first pickup from signup notes
@@ -106,6 +110,145 @@ export default function BillingPage() {
   const estimatedMonthly = monthlyTotal + weeklyTotal * 4
 
   const currentMonth = new Date().toLocaleString('default', { month: 'long', year: 'numeric' })
+
+  async function downloadInvoicePDF() {
+    const { default: jsPDF } = await import('jspdf')
+    const doc = new jsPDF({ unit: 'pt', format: 'letter' })
+
+    const navy = [30, 58, 95] as const
+    const blue = [37, 99, 235] as const
+    const gray = [107, 114, 128] as const
+    const lightGray = [243, 244, 246] as const
+    const now = new Date()
+    const invoiceNum = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(Math.random() * 9000 + 1000)}`
+
+    // ── Header bar ──────────────────────────────────────────
+    doc.setFillColor(...navy)
+    doc.rect(0, 0, 612, 80, 'F')
+
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(22)
+    doc.setFont('helvetica', 'bold')
+    doc.text('TOTE VALET', 40, 35)
+
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(180, 200, 230)
+    doc.text('6582 Gun Club Rd, Coopersburg, PA 18036', 40, 52)
+    doc.text('hello@totevalet.com', 40, 64)
+
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.text('INVOICE', 572, 35, { align: 'right' })
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(180, 200, 230)
+    doc.text(invoiceNum, 572, 52, { align: 'right' })
+    doc.text(now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), 572, 64, { align: 'right' })
+
+    // ── Bill To ──────────────────────────────────────────────
+    doc.setTextColor(...gray)
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.text('BILL TO', 40, 110)
+
+    doc.setTextColor(...navy)
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text(customerName || 'Customer', 40, 126)
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...gray)
+    if (customerAddress) doc.text(customerAddress, 40, 140)
+
+    // ── Billing period ───────────────────────────────────────
+    doc.setTextColor(...gray)
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.text('BILLING PERIOD', 380, 110)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(...navy)
+    doc.text(currentMonth, 380, 126)
+
+    // ── Line items table ─────────────────────────────────────
+    let y = 185
+
+    // Table header
+    doc.setFillColor(...lightGray)
+    doc.rect(40, y, 532, 24, 'F')
+    doc.setTextColor(...navy)
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'bold')
+    doc.text('TOTE', 52, y + 15)
+    doc.text('STATUS', 200, y + 15)
+    doc.text('RATE', 380, y + 15)
+    doc.text('AMOUNT', 572, y + 15, { align: 'right' })
+
+    y += 24
+
+    // Rows
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+
+    const rows = billingLines.length > 0 ? billingLines : (startingTotes ? Array.from({ length: startingTotes }, (_, i) => ({
+      toteName: `Tote ${i + 1}`,
+      status: 'Pending first delivery',
+      charge: 1.0,
+      chargeType: 'weekly' as const,
+    })) : [])
+
+    rows.forEach((line, i) => {
+      if (i % 2 === 0) {
+        doc.setFillColor(250, 251, 252)
+        doc.rect(40, y, 532, 22, 'F')
+      }
+      doc.setTextColor(...navy)
+      doc.text(line.toteName, 52, y + 14)
+      doc.setTextColor(...gray)
+      doc.text(line.status, 200, y + 14)
+      doc.text(line.chargeType === 'monthly' ? '$15.00/mo' : '$1.00/wk', 380, y + 14)
+      doc.setTextColor(...navy)
+      doc.text(`$${line.charge.toFixed(2)}`, 572, y + 14, { align: 'right' })
+      y += 22
+    })
+
+    // Divider
+    y += 8
+    doc.setDrawColor(...lightGray)
+    doc.setLineWidth(1)
+    doc.line(40, y, 572, y)
+    y += 16
+
+    // Totals
+    const totals = [
+      { label: 'Stored in warehouse', value: `$${monthlyTotal.toFixed(2)}/mo` },
+      { label: 'At home (weekly)', value: `$${weeklyTotal.toFixed(2)}/wk` },
+      { label: 'Estimated monthly total', value: `$${estimatedMonthly.toFixed(2)}`, bold: true },
+    ]
+
+    totals.forEach(({ label, value, bold }) => {
+      doc.setFont('helvetica', bold ? 'bold' : 'normal')
+      doc.setFontSize(bold ? 11 : 10)
+      doc.setTextColor(bold ? navy[0] : gray[0], bold ? navy[1] : gray[1], bold ? navy[2] : gray[2])
+      doc.text(label, 380, y)
+      doc.setTextColor(...navy)
+      doc.text(value, 572, y, { align: 'right' })
+      y += bold ? 0 : 20
+    })
+
+    // ── Footer ───────────────────────────────────────────────
+    doc.setFillColor(...navy)
+    doc.rect(0, 730, 612, 42, 'F')
+    doc.setTextColor(180, 200, 230)
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'normal')
+    doc.text('Thank you for choosing Tote Valet  ·  hello@totevalet.com  ·  (610) 555-0100', 306, 754, { align: 'center' })
+
+    doc.save(`ToteValet-Invoice-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}.pdf`)
+  }
 
   return (
     <div className="px-5 pt-6 pb-6 space-y-5">
@@ -299,7 +442,7 @@ export default function BillingPage() {
 
           {/* Actions */}
           <div className="space-y-3">
-            <button className="w-full flex items-center justify-center gap-2 btn-primary">
+            <button onClick={downloadInvoicePDF} className="w-full flex items-center justify-center gap-2 btn-primary">
               <Download className="w-4 h-4" />
               Download Invoice PDF
             </button>
