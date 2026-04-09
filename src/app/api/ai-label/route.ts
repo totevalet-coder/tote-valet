@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const safeMimeType = validMimeTypes.includes(mimeType) ? mimeType : 'image/jpeg'
 
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-3-5-sonnet-20241022',
       max_tokens: 1024,
       messages: [
         {
