@@ -7,7 +7,6 @@ import {
   Camera,
   Pencil,
   QrCode,
-  Loader2,
   Plus,
   Trash2,
   ChevronLeft,
@@ -35,7 +34,6 @@ export default function AddItemsPage() {
   const [toteName, setToteName] = useState('')
   const [isNewTote, setIsNewTote] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [aiLoading, setAiLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -53,48 +51,13 @@ export default function AddItemsPage() {
       }))
   }
 
-  // Handle photo capture and AI labeling
-  async function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
+  // Handle photo capture — saves photo for reference, prompts manual entry
+  function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-
     const url = URL.createObjectURL(file)
     setCapturedImageUrl(url)
-    setAiLoading(true)
-    setError(null)
-
-    try {
-      // Convert to base64 using a Promise so errors are catchable
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.readAsDataURL(file)
-        reader.onload = () => resolve((reader.result as string).split(',')[1])
-        reader.onerror = () => reject(new Error('Failed to read file'))
-      })
-
-      const res = await fetch('/api/ai-label', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64, mimeType: file.type }),
-      })
-
-      if (!res.ok) throw new Error('AI labeling failed')
-      const { items } = await res.json()
-
-      const newItems: DetectedItem[] = (items as string[]).map(label => ({
-        id: crypto.randomUUID(),
-        label,
-        ai_generated: true,
-      }))
-
-      setDetectedItems(prev => [...prev, ...newItems])
-      setStep('review')
-    } catch {
-      setError('AI labeling failed. You can add items manually below.')
-      setStep('review')
-    } finally {
-      setAiLoading(false)
-    }
+    setStep('review')
   }
 
   function updateItemLabel(id: string, newLabel: string) {
@@ -313,51 +276,43 @@ export default function AddItemsPage() {
             </p>
           </div>
 
-          {aiLoading ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-4">
-              <Loader2 className="w-10 h-10 text-brand-blue animate-spin" />
-              <p className="text-brand-navy font-semibold">Analyzing your items...</p>
-              <p className="text-gray-400 text-xs">AI is detecting and labeling items</p>
-            </div>
-          ) : (
-            <>
-              {capturedImageUrl && (
-                <div className="rounded-2xl overflow-hidden border border-gray-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={capturedImageUrl} alt="Captured" className="w-full h-48 object-cover" />
-                </div>
-              )}
+          <>
+            {capturedImageUrl && (
+              <div className="rounded-2xl overflow-hidden border border-gray-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={capturedImageUrl} alt="Captured" className="w-full h-48 object-cover" />
+              </div>
+            )}
 
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex flex-col items-center justify-center gap-3 border-2 border-dashed border-brand-blue rounded-2xl py-10 hover:bg-brand-blue/5 transition-colors"
+            >
+              <Camera className="w-10 h-10 text-brand-blue" />
+              <p className="text-brand-navy font-semibold">
+                {capturedImageUrl ? 'Take Another Photo' : 'Open Camera'}
+              </p>
+              <p className="text-gray-400 text-xs">Tap to open camera or upload image</p>
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handlePhotoCapture}
+            />
+
+            {capturedImageUrl && (
               <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full flex flex-col items-center justify-center gap-3 border-2 border-dashed border-brand-blue rounded-2xl py-10 hover:bg-brand-blue/5 transition-colors"
+                onClick={() => setStep('scan')}
+                className="btn-primary w-full"
               >
-                <Camera className="w-10 h-10 text-brand-blue" />
-                <p className="text-brand-navy font-semibold">
-                  {capturedImageUrl ? 'Take Another Photo' : 'Open Camera'}
-                </p>
-                <p className="text-gray-400 text-xs">Tap to open camera or upload image</p>
+                Continue to Scan Tote
               </button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handlePhotoCapture}
-              />
-
-              {capturedImageUrl && (
-                <button
-                  onClick={() => setStep('scan')}
-                  className="btn-primary w-full"
-                >
-                  Continue to Scan Tote
-                </button>
-              )}
-            </>
-          )}
+            )}
+          </>
         </div>
       )}
 
