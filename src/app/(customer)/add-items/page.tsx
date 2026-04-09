@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   CheckCircle2,
   Sparkles,
+  X,
 } from 'lucide-react'
 import type { ToteItem } from '@/types/database'
 
@@ -36,7 +37,47 @@ export default function AddItemsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null)
+  const [scannerActive, setScannerActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const scannerRef = useRef<{ stop: () => Promise<void> } | null>(null)
+  const scannerDivId = 'qr-reader'
+
+  // Start the barcode scanner
+  async function startScanner() {
+    setScannerActive(true)
+    // Small delay to allow the div to render
+    await new Promise(r => setTimeout(r, 200))
+    try {
+      const { Html5Qrcode } = await import('html5-qrcode')
+      const scanner = new Html5Qrcode(scannerDivId)
+      scannerRef.current = scanner
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 150 } },
+        (decodedText) => {
+          setBarcodeValue(decodedText.toUpperCase())
+          stopScanner()
+        },
+        () => { /* ignore scan errors */ }
+      )
+    } catch {
+      setScannerActive(false)
+      setError('Could not access camera. Enter the tote ID manually below.')
+    }
+  }
+
+  async function stopScanner() {
+    if (scannerRef.current) {
+      try { await scannerRef.current.stop() } catch { /* ignore */ }
+      scannerRef.current = null
+    }
+    setScannerActive(false)
+  }
+
+  // Stop scanner when leaving scan step
+  useEffect(() => {
+    if (step !== 'scan') stopScanner()
+  }, [step])
 
   // Convert manual text to items list
   function parseManualItems(): DetectedItem[] {
@@ -322,22 +363,41 @@ export default function AddItemsPage() {
           <div>
             <h1 className="text-2xl font-black text-brand-navy">Scan Tote Barcode</h1>
             <p className="text-gray-500 text-sm mt-1">
-              Point your camera at the sticker on your tote
+              Point your camera at the barcode sticker on your tote
             </p>
           </div>
 
-          <div className="border-2 border-dashed border-brand-blue rounded-2xl p-8 flex flex-col items-center gap-4 bg-brand-blue/5">
-            <QrCode className="w-16 h-16 text-brand-blue" />
-            <p className="text-sm text-gray-500 text-center">
-              Camera barcode scanning requires device access.
-              <br />
-              Or enter the tote ID manually below.
-            </p>
-          </div>
+          {/* Live scanner view */}
+          {scannerActive ? (
+            <div className="relative rounded-2xl overflow-hidden border-2 border-brand-blue">
+              <div id={scannerDivId} className="w-full" />
+              <button
+                onClick={stopScanner}
+                className="absolute top-2 right-2 bg-white rounded-full p-1 shadow"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={startScanner}
+              className="w-full flex flex-col items-center justify-center gap-3 border-2 border-dashed border-brand-blue rounded-2xl py-10 hover:bg-brand-blue/5 transition-colors"
+            >
+              <QrCode className="w-10 h-10 text-brand-blue" />
+              <p className="text-brand-navy font-semibold">Tap to Scan Barcode</p>
+              <p className="text-gray-400 text-xs">Uses your phone camera</p>
+            </button>
+          )}
+
+          {barcodeValue && (
+            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm font-semibold text-green-700">
+              ✓ Scanned: {barcodeValue}
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Tote ID / Barcode
+              Or enter Tote ID manually
             </label>
             <input
               type="text"
@@ -350,15 +410,8 @@ export default function AddItemsPage() {
 
           <button
             onClick={() => {
-              if (!barcodeValue.trim()) {
-                // No barcode — create a new tote and ask for nickname
-                setIsNewTote(true)
-                setStep('nickname')
-              } else {
-                // Check if this tote exists
-                setIsNewTote(false)
-                setStep('nickname')
-              }
+              setIsNewTote(!barcodeValue.trim())
+              setStep('nickname')
             }}
             className="btn-primary w-full"
           >
