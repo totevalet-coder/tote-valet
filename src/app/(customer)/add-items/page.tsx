@@ -184,10 +184,10 @@ export default function AddItemsPage() {
             )}
             <button
               onClick={() => photoRef.current?.click()}
-              className="flex items-center gap-2 text-sm text-brand-blue font-semibold"
+              className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-brand-blue rounded-2xl py-5 text-brand-blue font-semibold hover:bg-brand-blue/5 transition-colors"
             >
-              <Camera className="w-4 h-4" />
-              {capturedImageUrl ? 'Retake Photo' : 'Take Photo'}
+              <Camera className="w-6 h-6" />
+              {capturedImageUrl ? 'Retake Photo' : 'Take Photo of Contents'}
             </button>
             <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoCapture} />
           </div>
