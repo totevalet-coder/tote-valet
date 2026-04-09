@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
 
-// Minimal proxy — session handling done client-side with implicit flow
 export function middleware(request: NextRequest) {
   return NextResponse.next()
 }
