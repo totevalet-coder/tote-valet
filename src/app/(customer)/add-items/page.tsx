@@ -1,138 +1,90 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   Camera,
-  Pencil,
   QrCode,
   Loader2,
   Plus,
   Trash2,
   ChevronLeft,
   CheckCircle2,
-  Sparkles,
-  X,
 } from 'lucide-react'
 import type { ToteItem } from '@/types/database'
 
-type WorkflowStep = 'choose' | 'manual' | 'photo' | 'scan' | 'nickname' | 'review' | 'done'
-type InputMethod = 'photo' | 'manual'
-
-interface DetectedItem extends ToteItem {
+interface DetectedItem {
   id: string
+  label: string
+  ai_generated: boolean
 }
+
+type WorkflowStep = 'items' | 'details' | 'done'
 
 export default function AddItemsPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  const [step, setStep] = useState<WorkflowStep>('choose')
-  const [inputMethod, setInputMethod] = useState<InputMethod>('manual')
-  const [manualText, setManualText] = useState('')
-  const [detectedItems, setDetectedItems] = useState<DetectedItem[]>([])
-  const [barcodeValue, setBarcodeValue] = useState('')
+  const [step, setStep] = useState<WorkflowStep>('items')
+  const [items, setItems] = useState<DetectedItem[]>([{ id: crypto.randomUUID(), label: '', ai_generated: false }])
   const [toteName, setToteName] = useState('')
-  const [isNewTote, setIsNewTote] = useState(true)
+  const [barcodeValue, setBarcodeValue] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null)
-  const [scannerActive, setScannerActive] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const scannerRef = useRef<{ stop: () => Promise<void> } | null>(null)
-  const scannerDivId = 'qr-reader'
+  const photoRef = useRef<HTMLInputElement>(null)
+  const barcodeRef = useRef<HTMLInputElement>(null)
 
-  // Start the barcode scanner
-  async function startScanner() {
-    setScannerActive(true)
-    // Small delay to allow the div to render
-    await new Promise(r => setTimeout(r, 200))
-    try {
-      const { Html5Qrcode } = await import('html5-qrcode')
-      const scanner = new Html5Qrcode(scannerDivId)
-      scannerRef.current = scanner
-      await scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 150 } },
-        (decodedText) => {
-          setBarcodeValue(decodedText.toUpperCase())
-          stopScanner()
-        },
-        () => { /* ignore scan errors */ }
-      )
-    } catch {
-      setScannerActive(false)
-      setError('Could not access camera. Enter the tote ID manually below.')
-    }
+  function addItem() {
+    setItems(prev => [...prev, { id: crypto.randomUUID(), label: '', ai_generated: false }])
   }
 
-  async function stopScanner() {
-    if (scannerRef.current) {
-      try { await scannerRef.current.stop() } catch { /* ignore */ }
-      scannerRef.current = null
-    }
-    setScannerActive(false)
-  }
-
-  // Stop scanner when leaving scan step
-  useEffect(() => {
-    if (step !== 'scan') stopScanner()
-  }, [step])
-
-  // Convert manual text to items list
-  function parseManualItems(): DetectedItem[] {
-    return manualText
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map(label => ({
-        id: crypto.randomUUID(),
-        label,
-        ai_generated: false,
-      }))
-  }
-
-  // Handle photo capture — saves photo for reference, prompts manual entry
-  function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const url = URL.createObjectURL(file)
-    setCapturedImageUrl(url)
-    setStep('review')
-  }
-
-  function updateItemLabel(id: string, newLabel: string) {
-    setDetectedItems(prev =>
-      prev.map(item => (item.id === id ? { ...item, label: newLabel, ai_generated: false } : item))
-    )
+  function updateItem(id: string, label: string) {
+    setItems(prev => prev.map(i => i.id === id ? { ...i, label } : i))
   }
 
   function removeItem(id: string) {
-    setDetectedItems(prev => prev.filter(item => item.id !== id))
+    setItems(prev => prev.filter(i => i.id !== id))
   }
 
-  function addBlankItem() {
-    setDetectedItems(prev => [
-      ...prev,
-      { id: crypto.randomUUID(), label: '', ai_generated: false },
-    ])
+  // Take photo for reference (AI disabled — saved as tote photo)
+  function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setCapturedImageUrl(URL.createObjectURL(file))
+  }
+
+  // Decode barcode from a photo taken with camera
+  async function handleBarcodePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      // Use BarcodeDetector if available (Chrome Android, Safari 17+)
+      if ('BarcodeDetector' in window) {
+        const detector = new (window as Window & { BarcodeDetector: new (opts: object) => { detect: (img: HTMLImageElement) => Promise<Array<{ rawValue: string }>> } }).BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'] })
+        const img = new Image()
+        img.src = URL.createObjectURL(file)
+        await new Promise(r => img.onload = r)
+        const results = await detector.detect(img)
+        if (results.length > 0) {
+          setBarcodeValue(results[0].rawValue.toUpperCase())
+          return
+        }
+      }
+      // Fallback: try html5-qrcode file decode
+      const { Html5Qrcode } = await import('html5-qrcode')
+      const result = await Html5Qrcode.scanFile(file, false)
+      setBarcodeValue(result.toUpperCase())
+    } catch {
+      setError('Could not read barcode. Enter the Tote ID manually below.')
+    }
   }
 
   async function handleSave() {
-    const items: ToteItem[] = (
-      inputMethod === 'manual' ? parseManualItems() : detectedItems
-    ).map(({ label, ai_generated }) => ({ label, ai_generated }))
-
-    if (items.length === 0 || items.every(i => !i.label.trim())) {
-      setError('Please add at least one item.')
-      return
-    }
-
-    if (!toteName.trim()) {
-      setError('Please name this tote.')
-      return
-    }
+    const validItems = items.filter(i => i.label.trim())
+    if (validItems.length === 0) { setError('Add at least one item.'); return }
+    if (!toteName.trim()) { setError('Give this tote a name.'); return }
 
     setSaving(true)
     setError(null)
@@ -142,164 +94,112 @@ export default function AddItemsPage() {
       if (!userData.user) throw new Error('Not logged in')
 
       const { data: customer } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('auth_id', userData.user.id)
-        .single()
+        .from('customers').select('id').eq('auth_id', userData.user.id).single()
+      if (!customer) throw new Error('Customer not found')
 
-      if (!customer) throw new Error('Customer record not found')
-
-      // Determine tote ID: use scanned barcode if provided, otherwise generate one
       const toteId = barcodeValue.trim() || `TV-${Math.floor(1000 + Math.random() * 9000)}`
+      const toteItems: ToteItem[] = validItems.map(({ label, ai_generated }) => ({ label, ai_generated }))
 
-      // Check if tote already exists in DB
-      const { data: existingTote } = await supabase
-        .from('totes')
-        .select('id, items')
-        .eq('id', toteId)
-        .single()
+      const { data: existing } = await supabase.from('totes').select('id, items').eq('id', toteId).single()
 
-      if (existingTote) {
-        // Tote exists — merge items in
-        const mergedItems = [...(existingTote.items as ToteItem[]), ...items.filter(i => i.label.trim())]
-        const { error: updateError } = await supabase
-          .from('totes')
-          .update({ items: mergedItems, tote_name: toteName, last_scan_date: new Date().toISOString() })
-          .eq('id', existingTote.id)
-        if (updateError) throw updateError
+      if (existing) {
+        const merged = [...(existing.items as ToteItem[]), ...toteItems]
+        const { error: e } = await supabase.from('totes').update({ items: merged, tote_name: toteName, last_scan_date: new Date().toISOString() }).eq('id', existing.id)
+        if (e) throw e
       } else {
-        // New tote — create it
-        const { error: insertError } = await supabase.from('totes').insert({
-          id: toteId,
-          customer_id: customer.id,
-          tote_name: toteName,
-          seal_number: null,
-          photo_url: capturedImageUrl,
-          status: 'empty_at_customer',
-          bin_location: null,
-          last_scan_date: new Date().toISOString(),
-          items: items.filter(i => i.label.trim()),
+        const { error: e } = await supabase.from('totes').insert({
+          id: toteId, customer_id: customer.id, tote_name: toteName,
+          seal_number: null, photo_url: capturedImageUrl,
+          status: 'empty_at_customer', bin_location: null,
+          last_scan_date: new Date().toISOString(), items: toteItems,
         })
-        if (insertError) throw insertError
+        if (e) throw e
       }
 
       setStep('done')
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Save failed'
-      setError(msg)
+      setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="px-5 pt-6 pb-6 space-y-5">
-      {/* Back / breadcrumb */}
-      {step !== 'choose' && step !== 'done' && (
-        <button
-          onClick={() => {
-            if (step === 'manual' || step === 'photo') setStep('choose')
-            else if (step === 'scan') setStep('choose')
-            else if (step === 'nickname') setStep('scan')
-            else if (step === 'review') setStep(inputMethod === 'photo' ? 'photo' : 'manual')
-          }}
-          className="flex items-center gap-1 text-brand-navy font-semibold text-sm"
-        >
-          <ChevronLeft className="w-5 h-5" />
-          Back
+    <div className="px-5 pt-6 pb-24 space-y-5">
+
+      {/* Back button */}
+      {step === 'details' && (
+        <button onClick={() => setStep('items')} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
+          <ChevronLeft className="w-5 h-5" /> Back
         </button>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
-          {error}
-        </div>
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
       )}
 
-      {/* Step: Choose method */}
-      {step === 'choose' && (
+      {/* ── STEP 1: Items ── */}
+      {step === 'items' && (
         <div className="space-y-4">
           <div>
-            <h1 className="text-2xl font-black text-brand-navy">Add Items to Tote</h1>
-            <p className="text-gray-500 text-sm mt-1">How would you like to add your items?</p>
+            <h1 className="text-2xl font-black text-brand-navy">What&apos;s in this tote?</h1>
+            <p className="text-gray-500 text-sm mt-1">Add one item per line. Be as specific as you like.</p>
+          </div>
+
+          <div className="space-y-2">
+            {items.map((item, idx) => (
+              <div key={item.id} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={item.label}
+                  onChange={e => updateItem(item.id, e.target.value)}
+                  placeholder={`Item ${idx + 1}`}
+                  className="input-field flex-1"
+                  autoFocus={idx === items.length - 1 && idx > 0}
+                />
+                {items.length > 1 && (
+                  <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-600">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
 
           <button
-            onClick={() => { setInputMethod('photo'); setStep('photo') }}
-            className="w-full card flex items-center gap-4 hover:shadow-md active:scale-[0.98] transition-all"
+            onClick={addItem}
+            className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-xl py-3 text-sm text-gray-500 hover:border-brand-blue hover:text-brand-blue transition-colors"
           >
-            <div className="w-14 h-14 bg-brand-navy rounded-2xl flex items-center justify-center flex-shrink-0">
-              <Camera className="w-7 h-7 text-white" />
-            </div>
-            <div className="text-left">
-              <p className="font-bold text-brand-navy">Take Photos of Items</p>
-              <p className="text-xs text-gray-400 mt-0.5">AI will detect and label your items</p>
-            </div>
-            <Sparkles className="w-5 h-5 text-brand-blue ml-auto" />
+            <Plus className="w-4 h-4" /> Add Item
           </button>
 
-          <button
-            onClick={() => { setInputMethod('manual'); setStep('manual') }}
-            className="w-full card flex items-center gap-4 hover:shadow-md active:scale-[0.98] transition-all"
-          >
-            <div className="w-14 h-14 bg-brand-blue rounded-2xl flex items-center justify-center flex-shrink-0">
-              <Pencil className="w-7 h-7 text-white" />
-            </div>
-            <div className="text-left">
-              <p className="font-bold text-brand-navy">Enter Items Manually</p>
-              <p className="text-xs text-gray-400 mt-0.5">Type your item list</p>
-            </div>
-          </button>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-gray-50 px-3 text-xs text-gray-400">then</span>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setStep('scan')}
-            className="w-full card flex items-center gap-4 border-2 border-dashed border-gray-200 hover:border-brand-blue hover:shadow-md active:scale-[0.98] transition-all"
-          >
-            <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center flex-shrink-0">
-              <QrCode className="w-7 h-7 text-gray-500" />
-            </div>
-            <div className="text-left">
-              <p className="font-bold text-brand-navy">Scan Tote Barcode</p>
-              <p className="text-xs text-gray-400 mt-0.5">Link items to a specific tote</p>
-            </div>
-          </button>
-        </div>
-      )}
-
-      {/* Step: Manual entry */}
-      {step === 'manual' && (
-        <div className="space-y-4">
+          {/* Optional photo */}
           <div>
-            <h1 className="text-2xl font-black text-brand-navy">Enter Items</h1>
-            <p className="text-gray-500 text-sm mt-1">Type one item per line</p>
+            <p className="text-xs text-gray-400 mb-2">Optional: take a photo of the tote contents for reference</p>
+            {capturedImageUrl && (
+              <div className="rounded-xl overflow-hidden border border-gray-200 mb-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={capturedImageUrl} alt="Tote contents" className="w-full h-36 object-cover" />
+              </div>
+            )}
+            <button
+              onClick={() => photoRef.current?.click()}
+              className="flex items-center gap-2 text-sm text-brand-blue font-semibold"
+            >
+              <Camera className="w-4 h-4" />
+              {capturedImageUrl ? 'Retake Photo' : 'Take Photo'}
+            </button>
+            <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoCapture} />
           </div>
-
-          <textarea
-            value={manualText}
-            onChange={e => setManualText(e.target.value)}
-            placeholder={"Winter jacket\nBlack boots\nChristmas decorations\nSki gear..."}
-            rows={10}
-            className="input-field resize-none font-mono text-sm"
-          />
 
           <button
             onClick={() => {
-              const items = parseManualItems()
-              if (items.length === 0) {
-                setError('Please enter at least one item.')
+              if (items.filter(i => i.label.trim()).length === 0) {
+                setError('Add at least one item.')
                 return
               }
-              setDetectedItems(items)
-              setStep('scan')
+              setError(null)
+              setStep('details')
             }}
             className="btn-primary w-full"
           >
@@ -308,137 +208,16 @@ export default function AddItemsPage() {
         </div>
       )}
 
-      {/* Step: Photo capture */}
-      {step === 'photo' && (
+      {/* ── STEP 2: Tote Details ── */}
+      {step === 'details' && (
         <div className="space-y-4">
           <div>
-            <h1 className="text-2xl font-black text-brand-navy">Take a Photo</h1>
-            <p className="text-gray-500 text-sm mt-1">
-              AI will automatically detect and label your items
-            </p>
-          </div>
-
-          <>
-            {capturedImageUrl && (
-              <div className="rounded-2xl overflow-hidden border border-gray-200">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={capturedImageUrl} alt="Captured" className="w-full h-48 object-cover" />
-              </div>
-            )}
-
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full flex flex-col items-center justify-center gap-3 border-2 border-dashed border-brand-blue rounded-2xl py-10 hover:bg-brand-blue/5 transition-colors"
-            >
-              <Camera className="w-10 h-10 text-brand-blue" />
-              <p className="text-brand-navy font-semibold">
-                {capturedImageUrl ? 'Take Another Photo' : 'Open Camera'}
-              </p>
-              <p className="text-gray-400 text-xs">Tap to open camera or upload image</p>
-            </button>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={handlePhotoCapture}
-            />
-
-            {capturedImageUrl && (
-              <button
-                onClick={() => setStep('scan')}
-                className="btn-primary w-full"
-              >
-                Continue to Scan Tote
-              </button>
-            )}
-          </>
-        </div>
-      )}
-
-      {/* Step: Scan barcode */}
-      {step === 'scan' && (
-        <div className="space-y-4">
-          <div>
-            <h1 className="text-2xl font-black text-brand-navy">Scan Tote Barcode</h1>
-            <p className="text-gray-500 text-sm mt-1">
-              Point your camera at the barcode sticker on your tote
-            </p>
-          </div>
-
-          {/* Live scanner view */}
-          {scannerActive ? (
-            <div className="relative rounded-2xl overflow-hidden border-2 border-brand-blue">
-              <div id={scannerDivId} className="w-full" />
-              <button
-                onClick={stopScanner}
-                className="absolute top-2 right-2 bg-white rounded-full p-1 shadow"
-              >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={startScanner}
-              className="w-full flex flex-col items-center justify-center gap-3 border-2 border-dashed border-brand-blue rounded-2xl py-10 hover:bg-brand-blue/5 transition-colors"
-            >
-              <QrCode className="w-10 h-10 text-brand-blue" />
-              <p className="text-brand-navy font-semibold">Tap to Scan Barcode</p>
-              <p className="text-gray-400 text-xs">Uses your phone camera</p>
-            </button>
-          )}
-
-          {barcodeValue && (
-            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm font-semibold text-green-700">
-              ✓ Scanned: {barcodeValue}
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Or enter Tote ID manually
-            </label>
-            <input
-              type="text"
-              value={barcodeValue}
-              onChange={e => setBarcodeValue(e.target.value.toUpperCase())}
-              placeholder="TV-0001"
-              className="input-field"
-            />
-          </div>
-
-          <button
-            onClick={() => {
-              setIsNewTote(!barcodeValue.trim())
-              setStep('nickname')
-            }}
-            className="btn-primary w-full"
-          >
-            {barcodeValue ? 'Link to This Tote' : 'Create New Tote'}
-          </button>
-        </div>
-      )}
-
-      {/* Step: Nickname */}
-      {step === 'nickname' && (
-        <div className="space-y-4">
-          <div>
-            <h1 className="text-2xl font-black text-brand-navy">
-              {isNewTote ? 'Name Your Tote' : 'Confirm Tote'}
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">
-              {isNewTote
-                ? 'Give this tote a nickname so you can find it easily'
-                : `Adding items to tote ${barcodeValue}`}
-            </p>
+            <h1 className="text-2xl font-black text-brand-navy">Name this tote</h1>
+            <p className="text-gray-500 text-sm mt-1">Give it a nickname and optionally link it to a tote barcode.</p>
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Tote Nickname
-            </label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Tote Nickname</label>
             <input
               type="text"
               value={toteName}
@@ -448,108 +227,58 @@ export default function AddItemsPage() {
             />
             <div className="flex gap-2 mt-2 flex-wrap">
               {['Winter Clothes', 'Holiday Decor', 'Sports Gear', 'Books', 'Kitchen'].map(s => (
-                <button
-                  key={s}
-                  onClick={() => setToteName(s)}
-                  className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-brand-blue/10 hover:text-brand-blue transition-colors"
-                >
+                <button key={s} onClick={() => setToteName(s)}
+                  className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-brand-blue/10 hover:text-brand-blue transition-colors">
                   {s}
                 </button>
               ))}
             </div>
           </div>
 
-          <button
-            onClick={() => {
-              if (!toteName.trim()) {
-                setError('Please give this tote a name.')
-                return
-              }
-              setStep('review')
-            }}
-            className="btn-primary w-full"
-          >
-            Continue to Review
-          </button>
-        </div>
-      )}
-
-      {/* Step: Review items */}
-      {step === 'review' && (
-        <div className="space-y-4">
           <div>
-            <h1 className="text-2xl font-black text-brand-navy">Review Items</h1>
-            <p className="text-gray-500 text-sm mt-1">
-              Edit or remove any labels before saving
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            {(inputMethod === 'manual' ? parseManualItems() : detectedItems).length === 0 && (
-              <p className="text-gray-400 text-sm text-center py-6">No items yet. Add some below.</p>
-            )}
-            {(inputMethod === 'manual' ? parseManualItems() : detectedItems).map((item) => (
-              <div key={item.id} className="flex items-center gap-3 card py-3">
-                {item.ai_generated && (
-                  <Sparkles className="w-4 h-4 text-brand-blue flex-shrink-0" />
-                )}
-                {inputMethod === 'manual' ? (
-                  <span className="flex-1 text-sm text-gray-700">{item.label}</span>
-                ) : (
-                  <input
-                    type="text"
-                    value={item.label}
-                    onChange={e => updateItemLabel(item.id, e.target.value)}
-                    className="flex-1 text-sm border-0 outline-none bg-transparent text-gray-700"
-                  />
-                )}
-                {inputMethod === 'photo' && (
-                  <button
-                    onClick={() => removeItem(item.id)}
-                    className="text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {inputMethod === 'photo' && (
-            <button
-              onClick={addBlankItem}
-              className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-xl py-3 text-sm text-gray-500 hover:border-brand-blue hover:text-brand-blue transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Add Item
-            </button>
-          )}
-
-          <div className="bg-gray-50 rounded-xl p-4 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Tote name</span>
-              <span className="font-semibold text-brand-navy">{toteName}</span>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Tote Barcode / ID <span className="text-gray-400 font-normal">(optional)</span></label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={barcodeValue}
+                onChange={e => setBarcodeValue(e.target.value.toUpperCase())}
+                placeholder="TV-0001  or  leave blank"
+                className="input-field flex-1"
+              />
+              <button
+                onClick={() => barcodeRef.current?.click()}
+                className="flex items-center gap-1 px-3 py-2 bg-gray-100 rounded-xl text-sm font-semibold text-gray-600 hover:bg-brand-blue/10 hover:text-brand-blue transition-colors"
+              >
+                <QrCode className="w-4 h-4" /> Scan
+              </button>
             </div>
+            <input ref={barcodeRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleBarcodePhoto} />
             {barcodeValue && (
-              <div className="flex justify-between mt-1">
-                <span className="text-gray-500">Tote ID</span>
-                <span className="font-semibold text-brand-navy">{barcodeValue}</span>
+              <p className="text-xs text-green-600 font-semibold mt-1">✓ Tote ID: {barcodeValue}</p>
+            )}
+          </div>
+
+          <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Items</span>
+              <span className="font-semibold text-brand-navy">{items.filter(i => i.label.trim()).length} item{items.filter(i => i.label.trim()).length !== 1 ? 's' : ''}</span>
+            </div>
+            {toteName && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Tote name</span>
+                <span className="font-semibold text-brand-navy">{toteName}</span>
               </div>
             )}
           </div>
 
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="btn-primary w-full flex items-center justify-center gap-2"
-          >
+          <button onClick={handleSave} disabled={saving} className="btn-primary w-full flex items-center justify-center gap-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            Save Tote & Items
+            Save Tote
           </button>
         </div>
       )}
 
-      {/* Step: Done */}
+      {/* ── DONE ── */}
       {step === 'done' && (
         <div className="text-center py-8">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
@@ -557,29 +286,23 @@ export default function AddItemsPage() {
           </div>
           <h2 className="text-2xl font-black text-brand-navy mb-2">Tote Saved!</h2>
           <p className="text-gray-500 text-sm mb-6">
-            &ldquo;{toteName}&rdquo; has been saved to your account.
-            Schedule a pickup when ready.
+            &ldquo;{toteName}&rdquo; has been added to your account.
           </p>
           <div className="space-y-3">
             <button
               onClick={() => {
-                setStep('choose')
-                setManualText('')
-                setDetectedItems([])
-                setBarcodeValue('')
+                setStep('items')
+                setItems([{ id: crypto.randomUUID(), label: '', ai_generated: false }])
                 setToteName('')
+                setBarcodeValue('')
                 setCapturedImageUrl(null)
-                setIsNewTote(true)
                 setError(null)
               }}
               className="btn-secondary w-full"
             >
               Add Another Tote
             </button>
-            <button
-              onClick={() => { router.push('/dashboard'); router.refresh() }}
-              className="btn-outline w-full"
-            >
+            <button onClick={() => { router.push('/dashboard'); router.refresh() }} className="btn-outline w-full">
               Back to Dashboard
             </button>
           </div>
