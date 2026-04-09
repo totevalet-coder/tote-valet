@@ -64,35 +64,36 @@ export default function AddItemsPage() {
     setError(null)
 
     try {
-      // Convert to base64
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1]
+      // Convert to base64 using a Promise so errors are catchable
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.readAsDataURL(file)
+        reader.onload = () => resolve((reader.result as string).split(',')[1])
+        reader.onerror = () => reject(new Error('Failed to read file'))
+      })
 
-        const res = await fetch('/api/ai-label', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64, mimeType: file.type }),
-        })
+      const res = await fetch('/api/ai-label', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64, mimeType: file.type }),
+      })
 
-        if (!res.ok) throw new Error('AI labeling failed')
-        const { items } = await res.json()
+      if (!res.ok) throw new Error('AI labeling failed')
+      const { items } = await res.json()
 
-        const newItems: DetectedItem[] = (items as string[]).map(label => ({
-          id: crypto.randomUUID(),
-          label,
-          ai_generated: true,
-        }))
+      const newItems: DetectedItem[] = (items as string[]).map(label => ({
+        id: crypto.randomUUID(),
+        label,
+        ai_generated: true,
+      }))
 
-        setDetectedItems(prev => [...prev, ...newItems])
-        setStep('review')
-        setAiLoading(false)
-      }
-    } catch {
-      setError('AI labeling failed. You can add items manually.')
-      setAiLoading(false)
+      setDetectedItems(prev => [...prev, ...newItems])
       setStep('review')
+    } catch {
+      setError('AI labeling failed. You can add items manually below.')
+      setStep('review')
+    } finally {
+      setAiLoading(false)
     }
   }
 
