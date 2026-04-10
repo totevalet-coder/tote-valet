@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ToteCard from '@/components/ui/ToteCard'
 import {
@@ -13,6 +13,7 @@ import {
   X,
   Package,
   Truck,
+  ImageOff,
 } from 'lucide-react'
 import type { Tote } from '@/types/database'
 
@@ -32,15 +33,21 @@ const FILTER_PILLS: { key: FilterPill; label: string }[] = [
 
 export default function MyItemsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [tab, setTab] = useState<Tab>('browse')
   const [totes, setTotes] = useState<ToteWithPickup[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<FilterPill>('all')
+  const [filter, setFilter] = useState<FilterPill>(
+    (searchParams.get('filter') as FilterPill) ?? 'all'
+  )
   const [selectedTote, setSelectedTote] = useState<ToteWithPickup | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [signedUrls, setSignedUrls] = useState<string[]>([])
+  const [loadingPhotos, setLoadingPhotos] = useState(false)
+  const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null)
 
   // Return state
   const [returnSelected, setReturnSelected] = useState<Set<string>>(new Set())
@@ -50,7 +57,8 @@ export default function MyItemsPage() {
 
   // Pickup state
   const [pickupSelected, setPickupSelected] = useState<Set<string>>(new Set())
-  const [pickupDone, setPickupDone] = useState(false)
+  const [pickupStep, setPickupStep] = useState<'select' | 'date' | 'done'>('select')
+  const [pickupDate, setPickupDate] = useState('')
   const [requestingPickup, setRequestingPickup] = useState(false)
 
   useEffect(() => {
@@ -72,6 +80,25 @@ export default function MyItemsPage() {
     }
     loadTotes()
   }, [supabase, router])
+
+  async function loadSignedUrls(tote: ToteWithPickup) {
+    const paths = (tote as Tote & { photo_urls?: string[] }).photo_urls ?? []
+    if (paths.length === 0) { setSignedUrls([]); return }
+    setLoadingPhotos(true)
+    try {
+      const urls = await Promise.all(
+        paths.map(async (path) => {
+          const { data } = await supabase.storage.from('tote-photos').createSignedUrl(path, 3600)
+          return data?.signedUrl ?? null
+        })
+      )
+      setSignedUrls(urls.filter(Boolean) as string[])
+    } catch {
+      setSignedUrls([])
+    } finally {
+      setLoadingPhotos(false)
+    }
+  }
 
   const homeTotes = totes.filter(t => t.status === 'empty_at_customer' && !t.pickup_requested)
   const storedTotes = totes.filter(t => t.status === 'stored' || t.status === 'ready_to_stow')
@@ -98,13 +125,31 @@ export default function MyItemsPage() {
     })
   }
 
-  async function handleRequestPickup(ids: string[]) {
+  async function handleRequestPickup() {
+    if (!pickupDate) { setError('Please choose a preferred pickup date.'); return }
+    const ids = Array.from(pickupSelected)
     setRequestingPickup(true)
     setError(null)
     try {
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData.user) throw new Error('Not logged in')
+      const { data: customer } = await supabase.from('customers').select('id').eq('auth_id', userData.user.id).single()
+      if (!customer) throw new Error('Customer not found')
+
+      // Mark totes as pickup_requested
       await supabase.from('totes').update({ pickup_requested: true }).in('id', ids)
       setTotes(prev => prev.map(t => ids.includes(t.id) ? { ...t, pickup_requested: true } : t))
-      setPickupDone(true)
+
+      // Create tote_request record
+      await supabase.from('tote_requests').insert({
+        customer_id: customer.id,
+        type: 'pickup',
+        tote_ids: ids,
+        preferred_date: pickupDate,
+        status: 'pending',
+      })
+
+      setPickupStep('done')
     } catch {
       setError('Failed to request pickup. Please try again.')
     } finally {
@@ -155,7 +200,21 @@ export default function MyItemsPage() {
   if (selectedTote) {
     return (
       <div className="px-5 pt-6 pb-6 space-y-4">
-        <button onClick={() => setSelectedTote(null)} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
+        {/* Full-screen photo lightbox */}
+        {expandedPhoto && (
+          <div
+            className="fixed inset-0 bg-black z-50 flex items-center justify-center"
+            onClick={() => setExpandedPhoto(null)}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={expandedPhoto} alt="Tote photo" className="max-w-full max-h-full object-contain" />
+            <button className="absolute top-4 right-4 bg-white/20 rounded-full p-2">
+              <X className="w-6 h-6 text-white" />
+            </button>
+          </div>
+        )}
+
+        <button onClick={() => { setSelectedTote(null); setSignedUrls([]); setExpandedPhoto(null) }} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
           <ChevronLeft className="w-5 h-5" /> Back to My Items
         </button>
 
@@ -184,6 +243,34 @@ export default function MyItemsPage() {
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Photo gallery */}
+          <div>
+            <p className="text-sm font-semibold text-gray-700 mb-2">Photos</p>
+            {loadingPhotos ? (
+              <div className="flex gap-2">
+                {[1,2].map(i => <div key={i} className="w-20 h-20 rounded-xl bg-gray-200 animate-pulse" />)}
+              </div>
+            ) : signedUrls.length > 0 ? (
+              <div className="flex gap-2 flex-wrap">
+                {signedUrls.map((url, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setExpandedPhoto(url)}
+                    className="w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0 hover:opacity-90 transition-opacity"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-gray-400 text-sm">
+                <ImageOff className="w-4 h-4" />
+                No photos for this tote
               </div>
             )}
           </div>
@@ -260,7 +347,7 @@ export default function MyItemsPage() {
             <div className="space-y-3">
               {filteredTotes.map(tote => (
                 <div key={tote.id} className="relative">
-                  <ToteCard tote={tote} onClick={() => setSelectedTote(tote)} />
+                  <ToteCard tote={tote} onClick={() => { setSelectedTote(tote); loadSignedUrls(tote) }} />
                   {tote.pickup_requested && (
                     <span className="absolute top-3 right-3 text-xs bg-brand-blue text-white font-semibold px-2 py-0.5 rounded-full">
                       Pickup Requested
@@ -279,15 +366,50 @@ export default function MyItemsPage() {
           <h1 className="text-2xl font-black text-brand-navy">Request Pickup</h1>
           <TabBar />
 
-          {pickupDone ? (
+          {pickupStep === 'done' ? (
             <div className="text-center py-8">
               <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
                 <CheckCircle2 className="w-10 h-10 text-green-600" />
               </div>
               <h2 className="text-2xl font-black text-brand-navy mb-2">Pickup Requested!</h2>
-              <p className="text-gray-500 text-sm mb-6">We&apos;ll contact you to schedule a pickup date.</p>
-              <button onClick={() => { setPickupDone(false); setPickupSelected(new Set()); setTab('browse') }} className="btn-primary w-full">
+              <p className="text-gray-500 text-sm mb-2">
+                {pickupSelected.size} tote{pickupSelected.size !== 1 ? 's' : ''} scheduled for pickup.
+              </p>
+              <p className="text-gray-400 text-xs mb-6">
+                Preferred date:{' '}
+                {new Date(pickupDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              </p>
+              <button onClick={() => { setPickupStep('select'); setPickupSelected(new Set()); setPickupDate(''); setTab('browse') }} className="btn-primary w-full">
                 Back to My Items
+              </button>
+            </div>
+          ) : pickupStep === 'date' ? (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-bold text-brand-navy">Choose Pickup Date</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Scheduling pickup for {pickupSelected.size} tote{pickupSelected.size !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Preferred Pickup Date</label>
+                <input
+                  type="date"
+                  value={pickupDate}
+                  onChange={e => setPickupDate(e.target.value)}
+                  min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                  className="input-field"
+                />
+                <p className="text-xs text-gray-400 mt-1">We&apos;ll confirm the exact date once scheduled.</p>
+              </div>
+              <button
+                onClick={handleRequestPickup}
+                disabled={requestingPickup || !pickupDate}
+                className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {requestingPickup && <Loader2 className="w-4 h-4 animate-spin" />}
+                <Truck className="w-4 h-4" />
+                Confirm Pickup Request
               </button>
             </div>
           ) : homeTotes.length === 0 ? (
@@ -302,11 +424,10 @@ export default function MyItemsPage() {
 
               {/* Request All button */}
               <button
-                onClick={() => handleRequestPickup(homeTotes.map(t => t.id))}
-                disabled={requestingPickup}
-                className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white rounded-2xl px-6 py-4 font-bold hover:bg-blue-900 active:scale-[0.98] transition-all disabled:opacity-60"
+                onClick={() => { setPickupSelected(new Set(homeTotes.map(t => t.id))); setPickupStep('date') }}
+                className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white rounded-2xl px-6 py-4 font-bold hover:bg-blue-900 active:scale-[0.98] transition-all"
               >
-                {requestingPickup ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-5 h-5" />}
+                <Truck className="w-5 h-5" />
                 Request All {homeTotes.length} Tote{homeTotes.length !== 1 ? 's' : ''} for Pickup
               </button>
 
@@ -336,11 +457,9 @@ export default function MyItemsPage() {
 
               {pickupSelected.size > 0 && (
                 <button
-                  onClick={() => handleRequestPickup(Array.from(pickupSelected))}
-                  disabled={requestingPickup}
-                  className="btn-primary w-full flex items-center justify-center gap-2"
+                  onClick={() => setPickupStep('date')}
+                  className="btn-primary w-full"
                 >
-                  {requestingPickup && <Loader2 className="w-4 h-4 animate-spin" />}
                   Request Pickup for {pickupSelected.size} Tote{pickupSelected.size !== 1 ? 's' : ''}
                 </button>
               )}

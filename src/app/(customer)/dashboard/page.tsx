@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import StatBox from '@/components/ui/StatBox'
-import { PlusCircle, PackageSearch } from 'lucide-react'
+import { PlusCircle, PackageSearch, Package } from 'lucide-react'
 import type { Tote } from '@/types/database'
 
 interface ToteStats {
@@ -105,12 +105,14 @@ export default function DashboardPage() {
                 value={stats.storedInWarehouse}
                 emoji="🏢"
                 colorClass="text-brand-blue"
+                onClick={() => router.push('/my-items?filter=stored')}
               />
               <StatBox
                 label="In Transit"
                 value={stats.inTransit}
                 emoji="🚐"
                 colorClass="text-yellow-600"
+                onClick={() => router.push('/my-items?filter=in_transit')}
               />
             </div>
             <div className="flex gap-3">
@@ -119,12 +121,14 @@ export default function DashboardPage() {
                 value={stats.fullAtHome}
                 emoji="📦"
                 colorClass="text-brand-navy"
+                onClick={() => router.push('/my-items?filter=empty_at_customer')}
               />
               <StatBox
                 label="Empty Totes at Home"
                 value={stats.emptyAtHome}
                 emoji="🗃️"
                 colorClass="text-gray-500"
+                onClick={() => router.push('/my-items?filter=empty_at_customer')}
               />
             </div>
           </div>
@@ -156,6 +160,19 @@ export default function DashboardPage() {
           <div className="text-left">
             <p className="font-black text-base">My Items / Pickups & Returns</p>
             <p className="text-gray-400 text-xs mt-0.5">Browse, request pickup or delivery</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => router.push('/request-totes')}
+          className="w-full flex items-center gap-4 bg-white border-2 border-gray-200 text-brand-navy rounded-2xl px-6 py-5 shadow-sm hover:bg-gray-50 active:scale-[0.98] transition-all duration-150"
+        >
+          <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Package className="w-7 h-7 text-gray-500" />
+          </div>
+          <div className="text-left">
+            <p className="font-black text-base">Request Empty Totes</p>
+            <p className="text-gray-400 text-xs mt-0.5">Need more totes delivered to your home</p>
           </div>
         </button>
       </section>

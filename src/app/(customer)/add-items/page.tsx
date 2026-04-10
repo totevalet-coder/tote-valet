@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -11,8 +11,11 @@ import {
   Trash2,
   ChevronLeft,
   CheckCircle2,
+  X,
 } from 'lucide-react'
 import type { ToteItem } from '@/types/database'
+
+const MAX_PHOTOS = 5
 
 interface DetectedItem {
   id: string
@@ -30,11 +33,42 @@ export default function AddItemsPage() {
   const [items, setItems] = useState<DetectedItem[]>([{ id: crypto.randomUUID(), label: '', ai_generated: false }])
   const [toteName, setToteName] = useState('')
   const [barcodeValue, setBarcodeValue] = useState('')
+  const [existingToteName, setExistingToteName] = useState<string | null>(null) // null = new tote, string = existing
+  const [lookingUp, setLookingUp] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [capturedImageUrl, setCapturedImageUrl] = useState<string | null>(null)
+  const [photoPaths, setPhotoPaths] = useState<string[]>([])      // storage paths
+  const [photoThumbs, setPhotoThumbs] = useState<string[]>([])    // local blob URLs for preview
+  const [customerId, setCustomerId] = useState<string | null>(null)
   const photoRef = useRef<HTMLInputElement>(null)
   const barcodeRef = useRef<HTMLInputElement>(null)
+
+  // Load customer ID on mount for storage path
+  useEffect(() => {
+    async function load() {
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData.user) return
+      const { data: c } = await supabase.from('customers').select('id').eq('auth_id', userData.user.id).single()
+      if (c) setCustomerId(c.id)
+    }
+    load()
+  }, [])
+
+  // When a barcode is entered/scanned, look it up in the DB
+  async function lookupTote(id: string) {
+    const trimmed = id.trim().toUpperCase()
+    if (!trimmed) { setExistingToteName(null); return }
+    setLookingUp(true)
+    const { data } = await supabase.from('totes').select('tote_name').eq('id', trimmed).maybeSingle()
+    if (data?.tote_name) {
+      setExistingToteName(data.tote_name)
+      setToteName(data.tote_name)
+    } else {
+      setExistingToteName(null)
+    }
+    setLookingUp(false)
+  }
 
   function addItem() {
     setItems(prev => [...prev, { id: crypto.randomUUID(), label: '', ai_generated: false }])
@@ -48,11 +82,39 @@ export default function AddItemsPage() {
     setItems(prev => prev.filter(i => i.id !== id))
   }
 
-  // Take photo for reference (AI disabled — saved as tote photo)
-  function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
+  // Upload photo to Supabase Storage, store path
+  async function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setCapturedImageUrl(URL.createObjectURL(file))
+    if (photoPaths.length >= MAX_PHOTOS) { setError(`Maximum ${MAX_PHOTOS} photos allowed.`); return }
+    if (!customerId) { setError('Not logged in.'); return }
+
+    // Show local preview immediately
+    const thumb = URL.createObjectURL(file)
+    setPhotoThumbs(prev => [...prev, thumb])
+    setUploading(true)
+    setError(null)
+
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = `${customerId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: uploadError } = await supabase.storage.from('tote-photos').upload(path, file)
+      if (uploadError) throw uploadError
+      setPhotoPaths(prev => [...prev, path])
+    } catch {
+      // Remove the preview if upload failed
+      setPhotoThumbs(prev => prev.slice(0, -1))
+      setError('Photo upload failed. Please try again.')
+    } finally {
+      setUploading(false)
+      // Reset input so same file can be selected again
+      if (photoRef.current) photoRef.current.value = ''
+    }
+  }
+
+  function removePhoto(idx: number) {
+    setPhotoPaths(prev => prev.filter((_, i) => i !== idx))
+    setPhotoThumbs(prev => prev.filter((_, i) => i !== idx))
   }
 
   // Decode barcode from a photo taken with camera
@@ -68,14 +130,18 @@ export default function AddItemsPage() {
         await new Promise(r => img.onload = r)
         const results = await detector.detect(img)
         if (results.length > 0) {
-          setBarcodeValue(results[0].rawValue.toUpperCase())
+          const val = results[0].rawValue.toUpperCase()
+          setBarcodeValue(val)
+          await lookupTote(val)
           return
         }
       }
       // Fallback: try html5-qrcode file decode
       const { Html5Qrcode } = await import('html5-qrcode')
       const result = await Html5Qrcode.scanFile(file, false)
-      setBarcodeValue(result.toUpperCase())
+      const val = result.toUpperCase()
+      setBarcodeValue(val)
+      await lookupTote(val)
     } catch {
       setError('Could not read barcode. Enter the Tote ID manually below.')
     }
@@ -84,7 +150,7 @@ export default function AddItemsPage() {
   async function handleSave() {
     const validItems = items.filter(i => i.label.trim())
     if (validItems.length === 0) { setError('Add at least one item.'); return }
-    if (!toteName.trim()) { setError('Give this tote a name.'); return }
+    if (!existingToteName && !toteName.trim()) { setError('Give this tote a name.'); return }
 
     setSaving(true)
     setError(null)
@@ -104,12 +170,20 @@ export default function AddItemsPage() {
 
       if (existing) {
         const merged = [...(existing.items as ToteItem[]), ...toteItems]
-        const { error: e } = await supabase.from('totes').update({ items: merged, tote_name: toteName, last_scan_date: new Date().toISOString() }).eq('id', existing.id)
+        const existingPaths = (existing as { photo_urls?: string[] }).photo_urls ?? []
+        const mergedPaths = [...existingPaths, ...photoPaths].slice(0, MAX_PHOTOS)
+        const { error: e } = await supabase.from('totes').update({
+          items: merged,
+          tote_name: existingToteName ?? toteName,
+          photo_urls: mergedPaths,
+          last_scan_date: new Date().toISOString(),
+        }).eq('id', existing.id)
         if (e) throw e
       } else {
         const { error: e } = await supabase.from('totes').insert({
           id: toteId, customer_id: customer.id, tote_name: toteName,
-          seal_number: null, photo_url: capturedImageUrl,
+          seal_number: null, photo_url: photoPaths[0] ?? null,
+          photo_urls: photoPaths,
           status: 'empty_at_customer', bin_location: null,
           last_scan_date: new Date().toISOString(), items: toteItems,
         })
@@ -173,22 +247,47 @@ export default function AddItemsPage() {
             <Plus className="w-4 h-4" /> Add Item
           </button>
 
-          {/* Optional photo */}
+          {/* Photos */}
           <div>
-            <p className="text-xs text-gray-400 mb-2">Optional: take a photo of the tote contents for reference</p>
-            {capturedImageUrl && (
-              <div className="rounded-xl overflow-hidden border border-gray-200 mb-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={capturedImageUrl} alt="Tote contents" className="w-full h-36 object-cover" />
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-gray-700">Photos <span className="text-gray-400 font-normal">(optional, up to {MAX_PHOTOS})</span></p>
+              <p className="text-xs text-gray-400">{photoPaths.length}/{MAX_PHOTOS}</p>
+            </div>
+
+            {/* Thumbnails */}
+            {photoThumbs.length > 0 && (
+              <div className="flex gap-2 flex-wrap mb-3">
+                {photoThumbs.map((thumb, idx) => (
+                  <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={thumb} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                    {idx >= photoPaths.length ? (
+                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                        <Loader2 className="w-4 h-4 text-white animate-spin" />
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => removePhoto(idx)}
+                        className="absolute top-1 right-1 bg-black/50 rounded-full p-0.5"
+                      >
+                        <X className="w-3 h-3 text-white" />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
-            <button
-              onClick={() => photoRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-brand-blue rounded-2xl py-5 text-brand-blue font-semibold hover:bg-brand-blue/5 transition-colors"
-            >
-              <Camera className="w-6 h-6" />
-              {capturedImageUrl ? 'Retake Photo' : 'Take Photo of Contents'}
-            </button>
+
+            {photoPaths.length < MAX_PHOTOS && (
+              <button
+                onClick={() => photoRef.current?.click()}
+                disabled={uploading}
+                className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-brand-blue rounded-2xl py-5 text-brand-blue font-semibold hover:bg-brand-blue/5 transition-colors disabled:opacity-50"
+              >
+                {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-6 h-6" />}
+                {uploading ? 'Uploading…' : photoThumbs.length === 0 ? 'Take Photo of Contents' : 'Add Another Photo'}
+              </button>
+            )}
             <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoCapture} />
           </div>
 
@@ -212,66 +311,85 @@ export default function AddItemsPage() {
       {step === 'details' && (
         <div className="space-y-4">
           <div>
-            <h1 className="text-2xl font-black text-brand-navy">Name this tote</h1>
-            <p className="text-gray-500 text-sm mt-1">Give it a nickname and optionally link it to a tote barcode.</p>
+            <h1 className="text-2xl font-black text-brand-navy">Which tote?</h1>
+            <p className="text-gray-500 text-sm mt-1">Scan or enter the tote barcode to link these items.</p>
           </div>
 
+          {/* Barcode / ID entry */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Tote Nickname</label>
-            <input
-              type="text"
-              value={toteName}
-              onChange={e => setToteName(e.target.value)}
-              placeholder="e.g. Winter Clothes, Holiday Decor..."
-              className="input-field"
-            />
-            <div className="flex gap-2 mt-2 flex-wrap">
-              {['Winter Clothes', 'Holiday Decor', 'Sports Gear', 'Books', 'Kitchen'].map(s => (
-                <button key={s} onClick={() => setToteName(s)}
-                  className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-brand-blue/10 hover:text-brand-blue transition-colors">
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Tote Barcode / ID <span className="text-gray-400 font-normal">(optional)</span></label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Tote Barcode / ID <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
             <input
               type="text"
               value={barcodeValue}
-              onChange={e => setBarcodeValue(e.target.value.toUpperCase())}
-              placeholder="TV-0001  or  leave blank"
+              onChange={e => {
+                setBarcodeValue(e.target.value.toUpperCase())
+                setExistingToteName(null)
+              }}
+              onBlur={e => lookupTote(e.target.value)}
+              placeholder="TV-0001  or  leave blank for new tote"
               className="input-field"
             />
             <button
               onClick={() => barcodeRef.current?.click()}
               className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-brand-blue rounded-2xl py-5 text-brand-blue font-semibold hover:bg-brand-blue/5 transition-colors mt-2"
             >
-              <QrCode className="w-6 h-6" /> Scan Tote Barcode
+              <QrCode className="w-6 h-6" />
+              {lookingUp ? 'Looking up tote…' : 'Scan Tote Barcode'}
             </button>
             <input ref={barcodeRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleBarcodePhoto} />
-            {barcodeValue && (
-              <p className="text-xs text-green-600 font-semibold mt-1">✓ Tote ID: {barcodeValue}</p>
-            )}
           </div>
+
+          {/* Existing tote found — show name, no input needed */}
+          {existingToteName ? (
+            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-4 flex items-center gap-3">
+              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-green-800">Tote found: &ldquo;{existingToteName}&rdquo;</p>
+                <p className="text-xs text-green-600">Items will be added to this tote</p>
+              </div>
+            </div>
+          ) : (
+            /* New tote — ask for nickname */
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Tote Nickname <span className="text-gray-400 font-normal">(new tote)</span>
+              </label>
+              <input
+                type="text"
+                value={toteName}
+                onChange={e => setToteName(e.target.value)}
+                placeholder="e.g. Winter Clothes, Holiday Decor..."
+                className="input-field"
+              />
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {['Winter Clothes', 'Holiday Decor', 'Sports Gear', 'Books', 'Kitchen'].map(s => (
+                  <button key={s} onClick={() => setToteName(s)}
+                    className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-brand-blue/10 hover:text-brand-blue transition-colors">
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
             <div className="flex justify-between">
-              <span className="text-gray-500">Items</span>
-              <span className="font-semibold text-brand-navy">{items.filter(i => i.label.trim()).length} item{items.filter(i => i.label.trim()).length !== 1 ? 's' : ''}</span>
+              <span className="text-gray-500">Items to add</span>
+              <span className="font-semibold text-brand-navy">{items.filter(i => i.label.trim()).length}</span>
             </div>
-            {toteName && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Tote name</span>
-                <span className="font-semibold text-brand-navy">{toteName}</span>
-              </div>
-            )}
+            <div className="flex justify-between">
+              <span className="text-gray-500">Tote</span>
+              <span className="font-semibold text-brand-navy">
+                {existingToteName ?? (toteName || (barcodeValue ? barcodeValue : 'New tote'))}
+              </span>
+            </div>
           </div>
 
           <button onClick={handleSave} disabled={saving} className="btn-primary w-full flex items-center justify-center gap-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            Save Tote
+            Save Items
           </button>
         </div>
       )}
@@ -282,9 +400,12 @@ export default function AddItemsPage() {
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
             <CheckCircle2 className="w-10 h-10 text-green-600" />
           </div>
-          <h2 className="text-2xl font-black text-brand-navy mb-2">Tote Saved!</h2>
+          <h2 className="text-2xl font-black text-brand-navy mb-2">Items Saved!</h2>
           <p className="text-gray-500 text-sm mb-6">
-            &ldquo;{toteName}&rdquo; has been added to your account.
+            {existingToteName
+              ? <>Items added to &ldquo;<strong>{existingToteName}</strong>&rdquo;</>
+              : <>&ldquo;<strong>{toteName}</strong>&rdquo; has been added to your account.</>
+            }
           </p>
           <div className="space-y-3">
             <button
@@ -293,7 +414,9 @@ export default function AddItemsPage() {
                 setItems([{ id: crypto.randomUUID(), label: '', ai_generated: false }])
                 setToteName('')
                 setBarcodeValue('')
-                setCapturedImageUrl(null)
+                setExistingToteName(null)
+                setPhotoPaths([])
+                setPhotoThumbs([])
                 setError(null)
               }}
               className="btn-secondary w-full"

@@ -52,7 +52,8 @@ export interface Tote {
   customer_id: string
   tote_name: string | null
   seal_number: string | null       // e.g. SL-4831
-  photo_url: string | null
+  photo_url: string | null         // legacy single photo
+  photo_urls: string[]             // storage paths — up to 5
   status: ToteStatus
   bin_location: string | null      // e.g. A-12
   last_scan_date: string | null

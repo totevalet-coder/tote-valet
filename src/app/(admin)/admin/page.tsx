@@ -3,11 +3,22 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, CreditCard, Package, ClipboardList, Loader2, CheckCircle2, Truck } from 'lucide-react'
+import { AlertTriangle, CreditCard, Package, ClipboardList, Loader2, CheckCircle2, Truck, CalendarDays } from 'lucide-react'
 
 interface PickupRequest {
   toteId: string
   toteName: string | null
+  customerName: string
+  customerAddress: string | null
+  customerId: string
+}
+
+interface ToteRequest {
+  id: string
+  type: 'empty_tote_delivery' | 'pickup'
+  quantity: number | null
+  toteIds: string[]
+  preferredDate: string | null
   customerName: string
   customerAddress: string | null
   customerId: string
@@ -38,6 +49,8 @@ export default function AdminHomePage() {
   const [generatedId, setGeneratedId] = useState<string | null>(null)
   const [pickupRequests, setPickupRequests] = useState<PickupRequest[]>([])
   const [dismissedPickup, setDismissedPickup] = useState<Set<string>>(new Set())
+  const [toteRequests, setToteRequests] = useState<ToteRequest[]>([])
+  const [dismissedRequests, setDismissedRequests] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser()
@@ -47,12 +60,13 @@ export default function AdminHomePage() {
 
     const today = new Date().toISOString().split('T')[0]
 
-    const [totesRes, customersRes, routesRes, errorsRes, pickupRes] = await Promise.all([
+    const [totesRes, customersRes, routesRes, errorsRes, pickupRes, requestsRes] = await Promise.all([
       supabase.from('totes').select('status, bin_location'),
       supabase.from('customers').select('status, monthly_total, role'),
       supabase.from('routes').select('status, stops').eq('date', today),
       supabase.from('errors').select('id').eq('resolved', false),
       supabase.from('totes').select('id, tote_name, customer_id, customers(name, address)').eq('pickup_requested', true),
+      supabase.from('tote_requests').select('id, type, quantity, tote_ids, preferred_date, customer_id, customers(name, address)').eq('status', 'pending'),
     ])
 
     const totes = totesRes.data ?? []
@@ -88,6 +102,19 @@ export default function AdminHomePage() {
       customerId: t.customer_id,
     }))
     setPickupRequests(requests)
+
+    // Build tote_requests list
+    const tReqs: ToteRequest[] = (requestsRes.data ?? []).map((r: { id: string; type: string; quantity: number | null; tote_ids: string[]; preferred_date: string | null; customer_id: string; customers: { name: string; address: string | null } | null }) => ({
+      id: r.id,
+      type: r.type as 'empty_tote_delivery' | 'pickup',
+      quantity: r.quantity,
+      toteIds: r.tote_ids ?? [],
+      preferredDate: r.preferred_date,
+      customerName: r.customers?.name ?? 'Unknown',
+      customerAddress: r.customers?.address ?? null,
+      customerId: r.customer_id,
+    }))
+    setToteRequests(tReqs)
 
     setStats({
       mrr, activeCustomers, storedTotes, emptyAtCustomer, inTransit, failedPayments,
@@ -205,6 +232,17 @@ export default function AdminHomePage() {
             </div>
           </div>
         )}
+        {toteRequests.filter(r => r.type === 'empty_tote_delivery' && !dismissedRequests.has(r.id)).length > 0 && (
+          <div className="w-full flex items-center gap-3 bg-purple-50 border border-purple-300 rounded-2xl px-4 py-3 text-left">
+            <Package className="w-5 h-5 text-purple-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-bold text-purple-800">
+                {toteRequests.filter(r => r.type === 'empty_tote_delivery').length} Empty Tote Deliver{toteRequests.filter(r => r.type === 'empty_tote_delivery').length !== 1 ? 'ies' : 'y'} Requested
+              </p>
+              <p className="text-xs text-purple-600">Customers need empty totes delivered</p>
+            </div>
+          </div>
+        )}
         {stats.unstowedPastCutoff > 0 && (
           <button onClick={() => router.push('/warehouse/scan-store?tab=unstowed')}
             className="w-full flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 text-left hover:bg-amber-100 transition-colors">
@@ -268,7 +306,46 @@ export default function AdminHomePage() {
         </div>
       </section>
 
-      {/* Pickup Requests */}
+      {/* Tote Requests (empty deliveries + scheduled pickups) */}
+      {toteRequests.filter(r => !dismissedRequests.has(r.id)).length > 0 && (
+        <section>
+          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Pending Requests</h2>
+          <div className="space-y-2">
+            {toteRequests.filter(r => !dismissedRequests.has(r.id)).map(req => (
+              <div key={req.id} className="card flex items-start gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${req.type === 'empty_tote_delivery' ? 'bg-purple-100' : 'bg-blue-100'}`}>
+                  {req.type === 'empty_tote_delivery' ? (
+                    <Package className="w-5 h-5 text-purple-600" />
+                  ) : (
+                    <Truck className="w-5 h-5 text-blue-600" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-brand-navy text-sm">{req.customerName}</p>
+                  <p className="text-xs text-gray-500">
+                    {req.type === 'empty_tote_delivery'
+                      ? `Deliver ${req.quantity} empty tote${req.quantity !== 1 ? 's' : ''}`
+                      : `Pick up ${req.toteIds.length} tote${req.toteIds.length !== 1 ? 's' : ''}`
+                    }
+                  </p>
+                  {req.preferredDate && (
+                    <p className="text-xs text-brand-blue font-semibold mt-0.5">
+                      📅 {new Date(req.preferredDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </p>
+                  )}
+                  {req.customerAddress && (
+                    <p className="text-xs text-gray-400 truncate">{req.customerAddress}</p>
+                  )}
+                </div>
+                <button onClick={() => router.push(`/admin/customers/${req.customerId}`)} className="text-xs text-brand-blue font-semibold flex-shrink-0">View</button>
+                <button onClick={() => setDismissedRequests(prev => new Set([...prev, req.id]))} className="text-gray-300 hover:text-gray-500 flex-shrink-0 text-lg leading-none">×</button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Pickup Requests (legacy — totes with pickup_requested flag) */}
       {pickupRequests.filter(r => !dismissedPickup.has(r.toteId)).length > 0 && (
         <section>
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Pickup Requests</h2>
