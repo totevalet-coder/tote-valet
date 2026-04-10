@@ -18,6 +18,10 @@ import type { Tote } from '@/types/database'
 type FilterPill = 'all' | 'stored' | 'empty_at_customer' | 'in_transit'
 type Tab = 'browse' | 'return'
 
+interface ToteWithPickup extends Tote {
+  pickup_requested?: boolean
+}
+
 const FILTER_PILLS: { key: FilterPill; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'stored', label: 'In Warehouse' },
@@ -30,8 +34,9 @@ export default function MyItemsPage() {
   const supabase = createClient()
 
   const [tab, setTab] = useState<Tab>('browse')
-  const [totes, setTotes] = useState<Tote[]>([])
+  const [totes, setTotes] = useState<ToteWithPickup[]>([])
   const [loading, setLoading] = useState(true)
+  const [requestingPickup, setRequestingPickup] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterPill>('all')
   const [selectedTote, setSelectedTote] = useState<Tote | null>(null)
@@ -65,6 +70,18 @@ export default function MyItemsPage() {
     }
     loadTotes()
   }, [supabase, router])
+
+  async function handleRequestPickup(toteId: string) {
+    setRequestingPickup(toteId)
+    try {
+      await supabase.from('totes').update({ pickup_requested: true }).eq('id', toteId)
+      setTotes(prev => prev.map(t => t.id === toteId ? { ...t, pickup_requested: true } : t))
+    } catch {
+      setError('Failed to request pickup. Please try again.')
+    } finally {
+      setRequestingPickup(null)
+    }
+  }
 
   const storedTotes = totes.filter(t => t.status === 'stored' || t.status === 'ready_to_stow')
 
@@ -161,6 +178,23 @@ export default function MyItemsPage() {
             </div>
           </div>
 
+          {selectedTote.status === 'empty_at_customer' && (
+            (selectedTote as ToteWithPickup).pickup_requested ? (
+              <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-semibold rounded-xl px-4 py-4 text-center">
+                ✓ Pickup Requested — we&apos;ll be in touch to schedule
+              </div>
+            ) : (
+              <button
+                onClick={() => handleRequestPickup(selectedTote.id)}
+                disabled={requestingPickup === selectedTote.id}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+              >
+                {requestingPickup === selectedTote.id && <Loader2 className="w-4 h-4 animate-spin" />}
+                Request Pickup for Storage
+              </button>
+            )
+          )}
+
           {(selectedTote.status === 'stored' || selectedTote.status === 'ready_to_stow') && (
             <button
               onClick={() => {
@@ -242,7 +276,14 @@ export default function MyItemsPage() {
           ) : (
             <div className="space-y-3">
               {filteredTotes.map(tote => (
-                <ToteCard key={tote.id} tote={tote} onClick={() => setSelectedTote(tote)} />
+                <div key={tote.id} className="relative">
+                  <ToteCard tote={tote} onClick={() => setSelectedTote(tote)} />
+                  {(tote as ToteWithPickup).pickup_requested && (
+                    <span className="absolute top-3 right-3 text-xs bg-brand-blue text-white font-semibold px-2 py-0.5 rounded-full">
+                      Pickup Requested
+                    </span>
+                  )}
+                </div>
               ))}
             </div>
           )}
