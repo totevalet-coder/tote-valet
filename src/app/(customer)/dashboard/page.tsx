@@ -154,8 +154,8 @@ export default function DashboardPage() {
             <PackageSearch className="w-7 h-7 text-brand-blue" />
           </div>
           <div className="text-left">
-            <p className="font-black text-base">My Items / Request Return</p>
-            <p className="text-gray-400 text-xs mt-0.5">Browse & request delivery</p>
+            <p className="font-black text-base">My Items / Pickups & Returns</p>
+            <p className="text-gray-400 text-xs mt-0.5">Browse, request pickup or delivery</p>
           </div>
         </button>
       </section>
