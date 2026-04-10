@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ToteCard from '@/components/ui/ToteCard'
@@ -31,7 +31,7 @@ const FILTER_PILLS: { key: FilterPill; label: string }[] = [
   { key: 'empty_at_customer', label: 'At Home' },
 ]
 
-export default function MyItemsPage() {
+function MyItemsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -548,5 +548,19 @@ export default function MyItemsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function MyItemsPage() {
+  return (
+    <Suspense fallback={
+      <div className="px-5 pt-6 space-y-3">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="h-20 bg-gray-200 rounded-2xl animate-pulse" />
+        ))}
+      </div>
+    }>
+      <MyItemsContent />
+    </Suspense>
   )
 }
