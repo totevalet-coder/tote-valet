@@ -45,6 +45,7 @@ function MyItemsContent() {
   const [filter, setFilter] = useState<FilterPill>(
     (searchParams.get('filter') as FilterPill) ?? 'all'
   )
+  const [homeSubFilter, setHomeSubFilter] = useState<'all' | 'full' | 'empty'>('all')
   const [selectedTote, setSelectedTote] = useState<ToteWithPickup | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [signedUrls, setSignedUrls] = useState<string[]>([])
@@ -174,12 +175,17 @@ function MyItemsContent() {
       filter === 'all' ||
       (filter === 'stored' && (t.status === 'stored' || t.status === 'ready_to_stow')) ||
       t.status === filter
+    const matchesSubFilter =
+      filter !== 'empty_at_customer' ||
+      homeSubFilter === 'all' ||
+      (homeSubFilter === 'full' && t.items.length > 0) ||
+      (homeSubFilter === 'empty' && t.items.length === 0)
     const matchesSearch =
       !search ||
       (t.tote_name?.toLowerCase().includes(search.toLowerCase())) ||
       t.id.toLowerCase().includes(search.toLowerCase()) ||
       t.items.some(i => i.label.toLowerCase().includes(search.toLowerCase()))
-    return matchesFilter && matchesSearch
+    return matchesFilter && matchesSubFilter && matchesSearch
   })
 
   function togglePickupSelect(id: string) {
@@ -392,7 +398,7 @@ function MyItemsContent() {
 
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
             {FILTER_PILLS.map(({ key, label }) => (
-              <button key={key} onClick={() => setFilter(key)}
+              <button key={key} onClick={() => { setFilter(key); setHomeSubFilter('all') }}
                 className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-semibold border transition-all duration-150 ${
                   filter === key ? 'bg-brand-navy text-white border-brand-navy' : 'bg-white text-gray-600 border-gray-200 hover:border-brand-blue'
                 }`}>
@@ -400,6 +406,25 @@ function MyItemsContent() {
               </button>
             ))}
           </div>
+
+          {/* At Home sub-filter */}
+          {filter === 'empty_at_customer' && (
+            <div className="flex gap-2 -mt-1">
+              {(['all', 'full', 'empty'] as const).map(sub => (
+                <button
+                  key={sub}
+                  onClick={() => setHomeSubFilter(sub)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-150 ${
+                    homeSubFilter === sub
+                      ? 'bg-brand-blue text-white border-brand-blue'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-brand-blue'
+                  }`}
+                >
+                  {sub === 'all' ? 'All' : sub === 'full' ? '📦 Full' : '⬜ Empty'}
+                </button>
+              ))}
+            </div>
+          )}
 
           {loading ? (
             <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 bg-gray-200 rounded-2xl animate-pulse" />)}</div>
