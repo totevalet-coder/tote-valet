@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { X } from 'lucide-react'
 
 interface Props {
@@ -9,70 +9,118 @@ interface Props {
   hint?: string
 }
 
-const SCANNER_DIV_ID = 'tv-barcode-scanner'
-
 export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const rafRef = useRef<number | null>(null)
+  const detectedRef = useRef(false)
+
   const [status, setStatus] = useState<'starting' | 'scanning' | 'error'>('starting')
   const [errorMsg, setErrorMsg] = useState('')
-  const detectedRef = useRef(false)
-  const scannerRef = useRef<{ stop: () => Promise<void> } | null>(null)
+
+  // Stop camera + animation loop
+  const stopAll = useCallback(() => {
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+  }, [])
 
   useEffect(() => {
     let cancelled = false
 
-    async function startScanner() {
+    async function start() {
       try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        })
+
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
+
+        streamRef.current = stream
+        const video = videoRef.current!
+        video.srcObject = stream
+        await video.play()
+        if (cancelled) { stopAll(); return }
+
+        setStatus('scanning')
+
+        // ── Strategy 1: native BarcodeDetector (Chrome / Android / Safari 17+) ──
+        if ('BarcodeDetector' in window) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const detector = new (window as any).BarcodeDetector({
+            formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar'],
+          })
+
+          const tick = () => {
+            if (cancelled || detectedRef.current) return
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            detector.detect(video).then((results: Array<{ rawValue: string }>) => {
+              if (!cancelled && !detectedRef.current && results.length > 0) {
+                detectedRef.current = true
+                stopAll()
+                onDetected(results[0].rawValue.trim().toUpperCase())
+              } else {
+                rafRef.current = requestAnimationFrame(tick)
+              }
+            }).catch(() => { rafRef.current = requestAnimationFrame(tick) })
+          }
+          rafRef.current = requestAnimationFrame(tick)
+          return
+        }
+
+        // ── Strategy 2: canvas frame → html5-qrcode file scan (fallback) ──
         const { Html5Qrcode } = await import('html5-qrcode')
         if (cancelled) return
 
-        const scanner = new Html5Qrcode(SCANNER_DIV_ID)
-        scannerRef.current = scanner
+        const scanFrame = () => {
+          if (cancelled || detectedRef.current) return
+          const canvas = canvasRef.current
+          if (!canvas || video.videoWidth === 0) {
+            rafRef.current = requestAnimationFrame(scanFrame)
+            return
+          }
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+          canvas.getContext('2d')?.drawImage(video, 0, 0)
 
-        await scanner.start(
-          { facingMode: 'environment' },
-          {
-            fps: 15,
-            qrbox: { width: 280, height: 110 },
-            aspectRatio: 1.7778,
-          },
-          (decodedText) => {
-            if (cancelled || detectedRef.current) return
-            detectedRef.current = true
-            scanner.stop().catch(() => {}).finally(() => {
-              onDetected(decodedText.trim().toUpperCase())
-            })
-          },
-          () => { /* ignore per-frame no-result errors */ }
-        )
+          canvas.toBlob(async blob => {
+            if (!blob || cancelled || detectedRef.current) return
+            try {
+              const result = await Html5Qrcode.scanFile(new File([blob], 'f.jpg', { type: 'image/jpeg' }), false)
+              if (!detectedRef.current && !cancelled) {
+                detectedRef.current = true
+                stopAll()
+                onDetected(result.trim().toUpperCase())
+              }
+            } catch {
+              // no barcode this frame — wait then try again
+              setTimeout(() => { if (!cancelled) rafRef.current = requestAnimationFrame(scanFrame) }, 250)
+            }
+          }, 'image/jpeg', 0.8)
+        }
+        rafRef.current = requestAnimationFrame(scanFrame)
 
-        if (!cancelled) setStatus('scanning')
       } catch (err) {
         if (cancelled) return
-        const msg = err instanceof Error ? err.message.toLowerCase() : ''
+        const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
         if (msg.includes('permission') || msg.includes('notallowed') || msg.includes('denied')) {
           setErrorMsg('Camera permission denied. Allow camera access in your browser settings and try again.')
-        } else if (msg.includes('notfound') || msg.includes('no camera')) {
+        } else if (msg.includes('notfound') || msg.includes('devicenotfound') || msg.includes('no camera')) {
           setErrorMsg('No camera found on this device.')
         } else {
-          setErrorMsg('Could not start camera. Try entering the tote ID manually.')
+          setErrorMsg(`Camera error: ${err instanceof Error ? err.message : String(err)}`)
         }
         setStatus('error')
       }
     }
 
-    startScanner()
+    start()
+    return () => { cancelled = true; stopAll() }
+  }, [onDetected, stopAll])
 
-    return () => {
-      cancelled = true
-      scannerRef.current?.stop().catch(() => {})
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  function handleClose() {
-    scannerRef.current?.stop().catch(() => {})
-    onClose()
-  }
+  function handleClose() { stopAll(); onClose() }
 
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
@@ -80,43 +128,45 @@ export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-12 pb-4 flex-shrink-0">
         <h2 className="text-white font-bold text-lg">Scan Tote Barcode</h2>
-        <button
-          onClick={handleClose}
-          className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center"
-        >
+        <button onClick={handleClose} className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center">
           <X className="w-5 h-5 text-white" />
         </button>
       </div>
 
-      {/* Camera viewport */}
-      <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center">
+      {/* Viewport */}
+      <div className="flex-1 relative overflow-hidden">
 
-        {/* html5-qrcode mounts video here */}
-        <div
-          id={SCANNER_DIV_ID}
-          className="w-full"
-          style={{ maxHeight: '60vh' }}
+        {/* Live video feed — always rendered so ref is available */}
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
         />
+        {/* Hidden canvas for frame capture fallback */}
+        <canvas ref={canvasRef} className="hidden" />
 
-        {/* Corner-bracket overlay — sits on top of the video */}
+        {/* Corner-bracket scanning overlay */}
         {status === 'scanning' && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            <div className="relative w-72 h-28">
-              {/* Top-left */}
-              <span className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-brand-blue rounded-tl-sm" />
-              {/* Top-right */}
-              <span className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-brand-blue rounded-tr-sm" />
-              {/* Bottom-left */}
-              <span className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-brand-blue rounded-bl-sm" />
-              {/* Bottom-right */}
-              <span className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-brand-blue rounded-br-sm" />
-              {/* Scan line animation */}
-              <div className="absolute inset-x-2 top-1/2 h-0.5 bg-brand-blue/70 animate-pulse" />
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            {/* Dark vignette */}
+            <div className="absolute inset-0 bg-black/30" />
+            {/* Clear scanning window */}
+            <div className="relative z-10 w-72 h-28 bg-transparent">
+              {/* Cutout highlight */}
+              <div className="absolute inset-0 border border-white/20 rounded-sm" />
+              {/* Corner brackets */}
+              <span className="absolute top-0 left-0 w-7 h-7 border-t-[3px] border-l-[3px] border-brand-blue" />
+              <span className="absolute top-0 right-0 w-7 h-7 border-t-[3px] border-r-[3px] border-brand-blue" />
+              <span className="absolute bottom-0 left-0 w-7 h-7 border-b-[3px] border-l-[3px] border-brand-blue" />
+              <span className="absolute bottom-0 right-0 w-7 h-7 border-b-[3px] border-r-[3px] border-brand-blue" />
+              {/* Scan line */}
+              <div className="absolute inset-x-3 top-1/2 h-px bg-brand-blue/80 animate-pulse" />
             </div>
           </div>
         )}
 
-        {/* Starting spinner */}
+        {/* Starting */}
         {status === 'starting' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
             <div className="w-10 h-10 rounded-full border-4 border-white/30 border-t-white animate-spin" />
@@ -124,31 +174,25 @@ export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props
           </div>
         )}
 
-        {/* Error state */}
+        {/* Error */}
         {status === 'error' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center px-8 gap-4">
-            <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center text-2xl">📷</div>
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-8 gap-5">
+            <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-3xl">📷</div>
             <p className="text-white text-sm text-center leading-relaxed">{errorMsg}</p>
-            <button
-              onClick={handleClose}
-              className="mt-2 px-6 py-3 bg-white/15 text-white rounded-xl font-semibold text-sm"
-            >
+            <button onClick={handleClose} className="px-6 py-3 bg-white/15 text-white rounded-xl font-semibold text-sm border border-white/20">
               Enter ID Manually
             </button>
           </div>
         )}
       </div>
 
-      {/* Footer instructions */}
+      {/* Footer */}
       {status === 'scanning' && (
-        <div className="flex-shrink-0 px-5 pt-4 pb-10 text-center space-y-3">
+        <div className="flex-shrink-0 px-5 pt-5 pb-12 text-center space-y-3">
           <p className="text-white/80 text-sm font-medium">
             {hint ?? 'Point the camera at the barcode on your tote'}
           </p>
-          <button
-            onClick={handleClose}
-            className="text-white/50 text-xs underline underline-offset-2"
-          >
+          <button onClick={handleClose} className="text-white/40 text-xs underline underline-offset-2">
             Enter ID manually instead
           </button>
         </div>
