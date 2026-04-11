@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 330 105" fill="none">
+  <defs>
+    <linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#18AEDE"/>
+      <stop offset="100%" stop-color="#0082B8"/>
+    </linearGradient>
+    <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0078AC"/>
+      <stop offset="100%" stop-color="#00527A"/>
+    </linearGradient>
+    <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7DE3FF"/>
+      <stop offset="100%" stop-color="#3BBDE5"/>
+    </linearGradient>
+    <linearGradient id="ltg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#B8EEFF"/>
+      <stop offset="100%" stop-color="#5DD5F7"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="2" dy="4" stdDeviation="3.5" flood-color="#003087" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <!-- ── BOX BODY ── -->
+    <!-- Front face -->
+    <polygon points="10,35 62,35 62,86 10,86" fill="url(#fg)"/>
+    <!-- Right side face (darker — in shadow) -->
+    <polygon points="62,35 87,21 87,72 62,86" fill="url(#rg)"/>
+    <!-- Top face (visible between box top and lid) -->
+    <polygon points="10,35 62,35 87,21 35,21" fill="url(#tg)"/>
+
+    <!-- Front face horizontal ribs -->
+    <line x1="10" y1="55" x2="62" y2="55" stroke="#0070A0" stroke-width="1.5" opacity="0.45"/>
+    <line x1="10" y1="70" x2="62" y2="70" stroke="#0070A0" stroke-width="1.5" opacity="0.45"/>
+    <!-- Right face matching ribs -->
+    <line x1="62" y1="55" x2="87" y2="41" stroke="#003D60" stroke-width="1.5" opacity="0.45"/>
+    <line x1="62" y1="70" x2="87" y2="56" stroke="#003D60" stroke-width="1.5" opacity="0.45"/>
+
+    <!-- Front-face highlight at top edge -->
+    <line x1="10" y1="36" x2="62" y2="36" stroke="white" stroke-width="1.5" opacity="0.35"/>
+
+    <!-- Left handle -->
+    <rect x="3" y="48" width="9" height="17" rx="4" fill="#005A8C"/>
+    <rect x="5" y="50" width="5" height="13" rx="2.5" fill="#003D66" opacity="0.45"/>
+    <!-- Right handle (on right face) -->
+    <polygon points="87,41 93,38 93,53 87,56" fill="#004470"/>
+    <polygon points="88,43 92,41 92,51 88,53" fill="#002F50" opacity="0.45"/>
+
+    <!-- Bottom edge shadow strip for depth -->
+    <polygon points="10,81 62,81 62,86 10,86" fill="#005A8C" opacity="0.35"/>
+    <polygon points="62,80 87,66 87,72 62,86" fill="#003050" opacity="0.3"/>
+
+    <!-- ── LID ── -->
+    <!-- Lid front face -->
+    <polygon points="7,28 65,28 65,35 7,35" fill="#3CBDE5"/>
+    <!-- Lid right face -->
+    <polygon points="65,28 91,14 91,21 65,35" fill="#28ABCF"/>
+    <!-- Lid top face (brightest — catching most light) -->
+    <polygon points="7,28 65,28 91,14 33,14" fill="url(#ltg)"/>
+
+    <!-- Lid rim highlight -->
+    <line x1="7" y1="29" x2="65" y2="29" stroke="white" stroke-width="1" opacity="0.5"/>
+    <line x1="65" y1="28" x2="91" y2="14" stroke="white" stroke-width="0.75" opacity="0.3"/>
+
+    <!-- Lid clasp (center front) -->
+    <rect x="30" y="24" width="20" height="11" rx="3" fill="#003D66"/>
+    <rect x="33" y="26" width="14" height="7" rx="2" fill="#002040"/>
+    <!-- Clasp highlight -->
+    <rect x="33" y="26" width="14" height="2" rx="1" fill="white" opacity="0.15"/>
+    <!-- Clasp center pin -->
+    <circle cx="40" cy="30" r="2" fill="#4CCBF0" opacity="0.6"/>
+  </g>
+
+  <!-- Checkmark on front face -->
+  <path d="M21 65 L31 77 L52 50" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ── WORDMARK ── -->
+  <text x="107" y="57" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="34" fill="#003087" letter-spacing="1">TOTE</text>
+  <text x="107" y="93" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="34" fill="#00A0DF" letter-spacing="1">VALET</text>
+  <!-- Divider line -->
+  <line x1="107" y1="65" x2="315" y2="65" stroke="#003087" stroke-width="1.5" opacity="0.12"/>
+</svg>
