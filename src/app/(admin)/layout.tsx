@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { LayoutDashboard, Users, CreditCard, AlertTriangle, Settings, LogOut, ShieldCheck } from 'lucide-react'
+import { useRoleGuard } from '@/lib/useRoleGuard'
 
 const navItems = [
   { href: '/admin', label: 'Home', icon: LayoutDashboard, exact: true },
@@ -20,6 +21,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const supabase = createClient()
   const [adminName, setAdminName] = useState('Admin')
   const [showSignOut, setShowSignOut] = useState(false)
+  const { checking } = useRoleGuard(['admin'])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -34,6 +36,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  if (checking) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-8 h-8 rounded-full border-4 border-brand-navy border-t-transparent animate-spin" /></div>
 
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center">

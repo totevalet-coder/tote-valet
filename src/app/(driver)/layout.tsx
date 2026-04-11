@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { MapPin, Package, CheckSquare, LogOut, Truck } from 'lucide-react'
+import { useRoleGuard } from '@/lib/useRoleGuard'
 
 const navItems = [
   { href: '/driver', label: 'Route', icon: MapPin, exact: true },
@@ -18,6 +19,7 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
   const supabase = createClient()
   const [driverName, setDriverName] = useState('Driver')
   const [showSignOut, setShowSignOut] = useState(false)
+  const { checking } = useRoleGuard(['driver'])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -35,6 +37,8 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  if (checking) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-8 h-8 rounded-full border-4 border-brand-navy border-t-transparent animate-spin" /></div>
 
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center">

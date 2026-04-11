@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { LayoutDashboard, ScanLine, ClipboardList, ArrowLeftRight, BarChart2, LogOut, Warehouse } from 'lucide-react'
+import { useRoleGuard } from '@/lib/useRoleGuard'
 
 const navItems = [
   { href: '/warehouse', label: 'Home', icon: LayoutDashboard, exact: true },
@@ -20,6 +21,7 @@ export default function WarehouseLayout({ children }: { children: React.ReactNod
   const supabase = createClient()
   const [staffName, setStaffName] = useState('Staff')
   const [showSignOut, setShowSignOut] = useState(false)
+  const { checking } = useRoleGuard(['warehouse', 'admin'])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -37,6 +39,8 @@ export default function WarehouseLayout({ children }: { children: React.ReactNod
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  if (checking) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-8 h-8 rounded-full border-4 border-brand-navy border-t-transparent animate-spin" /></div>
 
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center">

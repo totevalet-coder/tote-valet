@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import BottomNav from '@/components/ui/BottomNav'
+import { useRoleGuard } from '@/lib/useRoleGuard'
 import {
   X,
   User,
@@ -99,6 +100,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   const [userName, setUserName] = useState('Customer')
   const [unreadCount, setUnreadCount] = useState(0)
   const supabase = createClient()
+  const { checking } = useRoleGuard(['customer'])
 
   const loadUnread = useCallback(async (customerId: string) => {
     const { count } = await supabase
@@ -126,6 +128,8 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
       if (customer) loadUnread(customer.id)
     })
   }, [supabase, loadUnread])
+
+  if (checking) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="w-8 h-8 rounded-full border-4 border-brand-navy border-t-transparent animate-spin" /></div>
 
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center">
