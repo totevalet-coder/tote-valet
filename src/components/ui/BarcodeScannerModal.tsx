@@ -15,110 +15,107 @@ export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props
   const streamRef = useRef<MediaStream | null>(null)
   const rafRef = useRef<number | null>(null)
   const detectedRef = useRef(false)
+  const cancelledRef = useRef(false)
 
   const [status, setStatus] = useState<'starting' | 'scanning' | 'error'>('starting')
   const [errorMsg, setErrorMsg] = useState('')
 
-  // Stop camera + animation loop
   const stopAll = useCallback(() => {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
+  // Start the detection loop — called from onPlaying so video is guaranteed visible
+  const startDetecting = useCallback(() => {
+    if (cancelledRef.current) return
 
-    async function start() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        })
-
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
-
-        streamRef.current = stream
-        const video = videoRef.current!
-        video.srcObject = stream
-        await video.play()
-        if (cancelled) { stopAll(); return }
-
-        setStatus('scanning')
-
-        // ── Strategy 1: native BarcodeDetector (Chrome / Android / Safari 17+) ──
-        if ('BarcodeDetector' in window) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const detector = new (window as any).BarcodeDetector({
-            formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar'],
-          })
-
-          const tick = () => {
-            if (cancelled || detectedRef.current) return
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            detector.detect(video).then((results: Array<{ rawValue: string }>) => {
-              if (!cancelled && !detectedRef.current && results.length > 0) {
-                detectedRef.current = true
-                stopAll()
-                onDetected(results[0].rawValue.trim().toUpperCase())
-              } else {
-                rafRef.current = requestAnimationFrame(tick)
-              }
-            }).catch(() => { rafRef.current = requestAnimationFrame(tick) })
+    // ── Strategy 1: native BarcodeDetector ──
+    if ('BarcodeDetector' in window) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detector = new (window as any).BarcodeDetector({
+        formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar'],
+      })
+      const tick = () => {
+        if (cancelledRef.current || detectedRef.current || !videoRef.current) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        detector.detect(videoRef.current).then((results: Array<{ rawValue: string }>) => {
+          if (!cancelledRef.current && !detectedRef.current && results.length > 0) {
+            detectedRef.current = true
+            stopAll()
+            onDetected(results[0].rawValue.trim().toUpperCase())
+          } else {
+            rafRef.current = requestAnimationFrame(tick)
           }
-          rafRef.current = requestAnimationFrame(tick)
-          return
-        }
-
-        // ── Strategy 2: canvas frame → html5-qrcode file scan (fallback) ──
-        const { Html5Qrcode } = await import('html5-qrcode')
-        if (cancelled) return
-
-        const scanFrame = () => {
-          if (cancelled || detectedRef.current) return
-          const canvas = canvasRef.current
-          if (!canvas || video.videoWidth === 0) {
-            rafRef.current = requestAnimationFrame(scanFrame)
-            return
-          }
-          canvas.width = video.videoWidth
-          canvas.height = video.videoHeight
-          canvas.getContext('2d')?.drawImage(video, 0, 0)
-
-          canvas.toBlob(async blob => {
-            if (!blob || cancelled || detectedRef.current) return
-            try {
-              const result = await Html5Qrcode.scanFile(new File([blob], 'f.jpg', { type: 'image/jpeg' }), false)
-              if (!detectedRef.current && !cancelled) {
-                detectedRef.current = true
-                stopAll()
-                onDetected(result.trim().toUpperCase())
-              }
-            } catch {
-              // no barcode this frame — wait then try again
-              setTimeout(() => { if (!cancelled) rafRef.current = requestAnimationFrame(scanFrame) }, 250)
-            }
-          }, 'image/jpeg', 0.8)
-        }
-        rafRef.current = requestAnimationFrame(scanFrame)
-
-      } catch (err) {
-        if (cancelled) return
-        const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
-        if (msg.includes('permission') || msg.includes('notallowed') || msg.includes('denied')) {
-          setErrorMsg('Camera permission denied. Allow camera access in your browser settings and try again.')
-        } else if (msg.includes('notfound') || msg.includes('devicenotfound') || msg.includes('no camera')) {
-          setErrorMsg('No camera found on this device.')
-        } else {
-          setErrorMsg(`Camera error: ${err instanceof Error ? err.message : String(err)}`)
-        }
-        setStatus('error')
+        }).catch(() => { rafRef.current = requestAnimationFrame(tick) })
       }
+      rafRef.current = requestAnimationFrame(tick)
+      return
     }
 
-    start()
-    return () => { cancelled = true; stopAll() }
+    // ── Strategy 2: canvas frames → html5-qrcode ──
+    import('html5-qrcode').then(({ Html5Qrcode }) => {
+      const scanFrame = () => {
+        if (cancelledRef.current || detectedRef.current) return
+        const video = videoRef.current
+        const canvas = canvasRef.current
+        if (!canvas || !video || video.videoWidth === 0) {
+          rafRef.current = requestAnimationFrame(scanFrame)
+          return
+        }
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        canvas.getContext('2d')?.drawImage(video, 0, 0)
+        canvas.toBlob(async blob => {
+          if (!blob || cancelledRef.current || detectedRef.current) return
+          try {
+            const result = await Html5Qrcode.scanFile(new File([blob], 'f.jpg', { type: 'image/jpeg' }), false)
+            if (!detectedRef.current && !cancelledRef.current) {
+              detectedRef.current = true
+              stopAll()
+              onDetected(result.trim().toUpperCase())
+            }
+          } catch {
+            setTimeout(() => { if (!cancelledRef.current) rafRef.current = requestAnimationFrame(scanFrame) }, 300)
+          }
+        }, 'image/jpeg', 0.85)
+      }
+      rafRef.current = requestAnimationFrame(scanFrame)
+    })
   }, [onDetected, stopAll])
+
+  // Get camera stream on mount — just attach to video, let autoPlay handle rendering
+  useEffect(() => {
+    cancelledRef.current = false
+
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    }).then(stream => {
+      if (cancelledRef.current) { stream.getTracks().forEach(t => t.stop()); return }
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        // Don't call .play() — autoPlay prop handles it, avoids mobile hang
+      }
+    }).catch(err => {
+      if (cancelledRef.current) return
+      const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+      if (msg.includes('permission') || msg.includes('notallowed') || msg.includes('denied')) {
+        setErrorMsg('Camera permission denied. Allow camera access in your browser settings.')
+      } else if (msg.includes('notfound') || msg.includes('devicenotfound')) {
+        setErrorMsg('No camera found on this device.')
+      } else {
+        setErrorMsg(`Could not access camera: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      setStatus('error')
+    })
+
+    return () => {
+      cancelledRef.current = true
+      stopAll()
+    }
+  }, [stopAll])
 
   function handleClose() { stopAll(); onClose() }
 
@@ -134,33 +131,36 @@ export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props
       </div>
 
       {/* Viewport */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-hidden bg-black">
 
-        {/* Live video feed — always rendered so ref is available */}
+        {/* Video — autoPlay so browser handles rendering without .play() hang */}
         <video
           ref={videoRef}
+          autoPlay
           muted
           playsInline
-          className="absolute inset-0 w-full h-full object-cover"
+          onPlaying={() => {
+            if (!cancelledRef.current) {
+              setStatus('scanning')
+              startDetecting()
+            }
+          }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
-        {/* Hidden canvas for frame capture fallback */}
+
+        {/* Hidden canvas for fallback frame capture */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Corner-bracket scanning overlay */}
+        {/* Scanning overlay */}
         {status === 'scanning' && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            {/* Dark vignette */}
-            <div className="absolute inset-0 bg-black/30" />
-            {/* Clear scanning window */}
-            <div className="relative z-10 w-72 h-28 bg-transparent">
-              {/* Cutout highlight */}
-              <div className="absolute inset-0 border border-white/20 rounded-sm" />
-              {/* Corner brackets */}
+            <div className="absolute inset-0 bg-black/25" />
+            <div className="relative z-10 w-72 h-28">
+              <div className="absolute inset-0 border border-white/10 rounded-sm" />
               <span className="absolute top-0 left-0 w-7 h-7 border-t-[3px] border-l-[3px] border-brand-blue" />
               <span className="absolute top-0 right-0 w-7 h-7 border-t-[3px] border-r-[3px] border-brand-blue" />
               <span className="absolute bottom-0 left-0 w-7 h-7 border-b-[3px] border-l-[3px] border-brand-blue" />
               <span className="absolute bottom-0 right-0 w-7 h-7 border-b-[3px] border-r-[3px] border-brand-blue" />
-              {/* Scan line */}
               <div className="absolute inset-x-3 top-1/2 h-px bg-brand-blue/80 animate-pulse" />
             </div>
           </div>
