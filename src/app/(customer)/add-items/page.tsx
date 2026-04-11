@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import type { ToteItem } from '@/types/database'
+import BarcodeScannerModal from '@/components/ui/BarcodeScannerModal'
 
 const MAX_PHOTOS = 5
 
@@ -41,8 +42,8 @@ export default function AddItemsPage() {
   const [photoPaths, setPhotoPaths] = useState<string[]>([])      // storage paths
   const [photoThumbs, setPhotoThumbs] = useState<string[]>([])    // local blob URLs for preview
   const [customerId, setCustomerId] = useState<string | null>(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
   const photoRef = useRef<HTMLInputElement>(null)
-  const barcodeRef = useRef<HTMLInputElement>(null)
 
   // Load customer ID on mount for storage path
   useEffect(() => {
@@ -117,34 +118,10 @@ export default function AddItemsPage() {
     setPhotoThumbs(prev => prev.filter((_, i) => i !== idx))
   }
 
-  // Decode barcode from a photo taken with camera
-  async function handleBarcodePhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      // Use BarcodeDetector if available (Chrome Android, Safari 17+)
-      if ('BarcodeDetector' in window) {
-        const detector = new (window as Window & { BarcodeDetector: new (opts: object) => { detect: (img: HTMLImageElement) => Promise<Array<{ rawValue: string }>> } }).BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'] })
-        const img = new Image()
-        img.src = URL.createObjectURL(file)
-        await new Promise(r => img.onload = r)
-        const results = await detector.detect(img)
-        if (results.length > 0) {
-          const val = results[0].rawValue.toUpperCase()
-          setBarcodeValue(val)
-          await lookupTote(val)
-          return
-        }
-      }
-      // Fallback: try html5-qrcode file decode
-      const { Html5Qrcode } = await import('html5-qrcode')
-      const result = await Html5Qrcode.scanFile(file, false)
-      const val = result.toUpperCase()
-      setBarcodeValue(val)
-      await lookupTote(val)
-    } catch {
-      setError('Could not read barcode. Enter the Tote ID manually below.')
-    }
+  async function handleBarcodeDetected(value: string) {
+    setScannerOpen(false)
+    setBarcodeValue(value)
+    await lookupTote(value)
   }
 
   async function handleSave() {
@@ -200,6 +177,14 @@ export default function AddItemsPage() {
 
   return (
     <div className="px-5 pt-6 pb-24 space-y-5">
+
+      {scannerOpen && (
+        <BarcodeScannerModal
+          onDetected={handleBarcodeDetected}
+          onClose={() => setScannerOpen(false)}
+          hint="Point the camera at the barcode on your tote"
+        />
+      )}
 
       {/* Back button */}
       {step === 'details' && (
@@ -332,13 +317,12 @@ export default function AddItemsPage() {
               className="input-field"
             />
             <button
-              onClick={() => barcodeRef.current?.click()}
+              onClick={() => setScannerOpen(true)}
               className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-brand-blue rounded-2xl py-5 text-brand-blue font-semibold hover:bg-brand-blue/5 transition-colors mt-2"
             >
               <QrCode className="w-6 h-6" />
               {lookingUp ? 'Looking up tote…' : 'Scan Tote Barcode'}
             </button>
-            <input ref={barcodeRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleBarcodePhoto} />
           </div>
 
           {/* Existing tote found — show name, no input needed */}
