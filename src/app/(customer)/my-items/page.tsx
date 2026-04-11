@@ -14,6 +14,9 @@ import {
   Package,
   Truck,
   ImageOff,
+  Pencil,
+  Trash2,
+  ArrowRightLeft,
 } from 'lucide-react'
 import type { Tote } from '@/types/database'
 
@@ -48,6 +51,12 @@ function MyItemsContent() {
   const [signedUrls, setSignedUrls] = useState<string[]>([])
   const [loadingPhotos, setLoadingPhotos] = useState(false)
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null)
+
+  // Edit mode state
+  const [editMode, setEditMode] = useState(false)
+  const [moveItemIdx, setMoveItemIdx] = useState<number | null>(null)
+  const [savingItems, setSavingItems] = useState(false)
+  const [emptyConfirm, setEmptyConfirm] = useState(false)
 
   // Return state
   const [returnSelected, setReturnSelected] = useState<Set<string>>(new Set())
@@ -98,6 +107,51 @@ function MyItemsContent() {
     } finally {
       setLoadingPhotos(false)
     }
+  }
+
+  async function handleRemoveItem(toteId: string, itemIdx: number) {
+    setSavingItems(true)
+    const tote = totes.find(t => t.id === toteId)
+    if (!tote) { setSavingItems(false); return }
+    const newItems = tote.items.filter((_, i) => i !== itemIdx)
+    await supabase.from('totes').update({ items: newItems }).eq('id', toteId)
+    const updated = { ...tote, items: newItems }
+    setTotes(prev => prev.map(t => t.id === toteId ? updated : t))
+    setSelectedTote(updated as ToteWithPickup)
+    setSavingItems(false)
+  }
+
+  async function handleMoveItem(fromToteId: string, itemIdx: number, toToteId: string) {
+    setSavingItems(true)
+    const fromTote = totes.find(t => t.id === fromToteId)
+    const toTote = totes.find(t => t.id === toToteId)
+    if (!fromTote || !toTote) { setSavingItems(false); return }
+    const movingItem = fromTote.items[itemIdx]
+    const newFromItems = fromTote.items.filter((_, i) => i !== itemIdx)
+    const newToItems = [...toTote.items, movingItem]
+    await Promise.all([
+      supabase.from('totes').update({ items: newFromItems }).eq('id', fromToteId),
+      supabase.from('totes').update({ items: newToItems }).eq('id', toToteId),
+    ])
+    const updatedFrom = { ...fromTote, items: newFromItems }
+    setTotes(prev => prev.map(t =>
+      t.id === fromToteId ? updatedFrom :
+      t.id === toToteId ? { ...toTote, items: newToItems } : t
+    ))
+    setSelectedTote(updatedFrom as ToteWithPickup)
+    setMoveItemIdx(null)
+    setSavingItems(false)
+  }
+
+  async function handleEmptyAll(toteId: string) {
+    setSavingItems(true)
+    await supabase.from('totes').update({ items: [] }).eq('id', toteId)
+    const updated = { ...totes.find(t => t.id === toteId)!, items: [] }
+    setTotes(prev => prev.map(t => t.id === toteId ? updated : t))
+    setSelectedTote(updated as ToteWithPickup)
+    setEmptyConfirm(false)
+    setEditMode(false)
+    setSavingItems(false)
   }
 
   const homeTotes = totes.filter(t => t.status === 'empty_at_customer' && !t.pickup_requested)
@@ -198,8 +252,50 @@ function MyItemsContent() {
 
   // ── Tote detail view ──
   if (selectedTote) {
+    const otherTotes = totes.filter(t => t.id !== selectedTote.id)
+
     return (
       <div className="px-5 pt-6 pb-6 space-y-4">
+
+        {/* Move item modal */}
+        {moveItemIdx !== null && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end" onClick={() => setMoveItemIdx(null)}>
+            <div className="bg-white w-full rounded-t-3xl p-5 space-y-3" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-bold text-brand-navy">Move to which tote?</h3>
+                <button onClick={() => setMoveItemIdx(null)}><X className="w-5 h-5 text-gray-400" /></button>
+              </div>
+              <p className="text-xs text-gray-400 mb-2">
+                Moving: <span className="font-semibold text-gray-700">{selectedTote.items[moveItemIdx]?.label}</span>
+              </p>
+              {otherTotes.length === 0 ? (
+                <p className="text-gray-400 text-sm text-center py-4">No other totes available.</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {otherTotes.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => handleMoveItem(selectedTote.id, moveItemIdx, t.id)}
+                      disabled={savingItems}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-brand-blue hover:bg-brand-blue/5 transition-all text-left"
+                    >
+                      <span className="text-xl">📦</span>
+                      <div>
+                        <p className="font-semibold text-brand-navy text-sm">{t.tote_name ?? t.id}</p>
+                        <p className="text-xs text-gray-400">{t.items.length} items</p>
+                      </div>
+                      {savingItems && <Loader2 className="w-4 h-4 animate-spin text-brand-blue ml-auto" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => setMoveItemIdx(null)} className="w-full py-3 text-sm text-gray-500 font-semibold">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Full-screen photo lightbox */}
         {expandedPhoto && (
           <div
@@ -214,20 +310,35 @@ function MyItemsContent() {
           </div>
         )}
 
-        <button onClick={() => { setSelectedTote(null); setSignedUrls([]); setExpandedPhoto(null) }} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
+        <button
+          onClick={() => { setSelectedTote(null); setSignedUrls([]); setExpandedPhoto(null); setEditMode(false); setEmptyConfirm(false) }}
+          className="flex items-center gap-1 text-brand-navy font-semibold text-sm"
+        >
           <ChevronLeft className="w-5 h-5" /> Back to My Items
         </button>
 
         <div className="card space-y-4">
+          {/* Header */}
           <div className="flex items-start justify-between">
             <div>
               <h2 className="text-xl font-black text-brand-navy">{selectedTote.tote_name ?? selectedTote.id}</h2>
               <p className="text-gray-400 text-xs mt-0.5">ID: {selectedTote.id}</p>
               {selectedTote.seal_number && <p className="text-gray-400 text-xs">Seal: {selectedTote.seal_number}</p>}
             </div>
-            <span className="text-3xl">📦</span>
+            <button
+              onClick={() => { setEditMode(e => !e); setEmptyConfirm(false) }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                editMode
+                  ? 'bg-brand-navy text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              {editMode ? 'Done' : 'Edit'}
+            </button>
           </div>
 
+          {/* Items */}
           <div>
             <p className="text-sm font-semibold text-gray-700 mb-2">Items ({selectedTote.items.length})</p>
             {selectedTote.items.length === 0 ? (
@@ -236,13 +347,64 @@ function MyItemsContent() {
               <div className="space-y-1">
                 {selectedTote.items.map((item, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm text-gray-700 py-1.5 border-b border-gray-50 last:border-0">
-                    <span className="text-gray-400 text-xs w-5">{i + 1}.</span>
+                    <span className="text-gray-400 text-xs w-5 flex-shrink-0">{i + 1}.</span>
                     <span className="flex-1">{item.label}</span>
-                    {item.ai_generated && (
+                    {item.ai_generated && !editMode && (
                       <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">AI</span>
+                    )}
+                    {editMode && (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => setMoveItemIdx(i)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-brand-blue hover:bg-blue-50 transition-colors"
+                          title="Move to another tote"
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleRemoveItem(selectedTote.id, i)}
+                          disabled={savingItems}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                          title="Remove item"
+                        >
+                          {savingItems ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Empty All — only in edit mode, only if items exist */}
+            {editMode && selectedTote.items.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                {emptyConfirm ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEmptyAll(selectedTote.id)}
+                      disabled={savingItems}
+                      className="flex-1 flex items-center justify-center gap-2 bg-red-500 text-white text-sm font-bold py-2.5 rounded-xl hover:bg-red-600 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {savingItems ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      Yes, remove all items
+                    </button>
+                    <button
+                      onClick={() => setEmptyConfirm(false)}
+                      className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 font-semibold hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setEmptyConfirm(true)}
+                    className="w-full flex items-center justify-center gap-2 border border-red-200 text-red-500 text-sm font-semibold py-2.5 rounded-xl hover:bg-red-50 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Empty All Items
+                  </button>
+                )}
               </div>
             )}
           </div>
