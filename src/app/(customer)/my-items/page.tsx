@@ -14,6 +14,8 @@ import {
   Package,
   Truck,
   ImageOff,
+  Plus,
+  Trash2,
 } from 'lucide-react'
 import type { Tote } from '@/types/database'
 
@@ -57,9 +59,17 @@ function MyItemsContent() {
 
   // Pickup state
   const [pickupSelected, setPickupSelected] = useState<Set<string>>(new Set())
-  const [pickupStep, setPickupStep] = useState<'select' | 'date' | 'done'>('select')
+  const [pickupStep, setPickupStep] = useState<'select' | 'confirm' | 'date' | 'done'>('select')
   const [pickupDate, setPickupDate] = useState('')
   const [requestingPickup, setRequestingPickup] = useState(false)
+
+  // Inventory confirmation state
+  const [confirmIdx, setConfirmIdx] = useState(0)
+  const [confirmChangeMode, setConfirmChangeMode] = useState<null | 'choice' | 'remove'>(null)
+  const [confirmRemoveSelected, setConfirmRemoveSelected] = useState<Set<number>>(new Set())
+  const [confirmUrls, setConfirmUrls] = useState<string[]>([])
+  const [confirmLoadingUrls, setConfirmLoadingUrls] = useState(false)
+  const [confirmSaving, setConfirmSaving] = useState(false)
 
   useEffect(() => {
     async function loadTotes() {
@@ -98,6 +108,62 @@ function MyItemsContent() {
     } finally {
       setLoadingPhotos(false)
     }
+  }
+
+  async function loadConfirmUrls(tote: ToteWithPickup) {
+    const paths = (tote as Tote & { photo_urls?: string[] }).photo_urls ?? []
+    if (paths.length === 0) { setConfirmUrls([]); return }
+    setConfirmLoadingUrls(true)
+    try {
+      const urls = await Promise.all(
+        paths.map(async (path) => {
+          const { data } = await supabase.storage.from('tote-photos').createSignedUrl(path, 3600)
+          return data?.signedUrl ?? null
+        })
+      )
+      setConfirmUrls(urls.filter(Boolean) as string[])
+    } catch {
+      setConfirmUrls([])
+    } finally {
+      setConfirmLoadingUrls(false)
+    }
+  }
+
+  function enterConfirmStep(selected: Set<string>) {
+    setConfirmIdx(0)
+    setConfirmChangeMode(null)
+    setConfirmRemoveSelected(new Set())
+    setConfirmUrls([])
+    setPickupStep('confirm')
+    const firstTote = totes.find(t => selected.has(t.id))
+    if (firstTote) loadConfirmUrls(firstTote)
+  }
+
+  function confirmAdvance(pickupTotesArr: ToteWithPickup[]) {
+    const next = confirmIdx + 1
+    setConfirmChangeMode(null)
+    setConfirmRemoveSelected(new Set())
+    if (next >= pickupTotesArr.length) {
+      setPickupStep('date')
+    } else {
+      setConfirmIdx(next)
+      loadConfirmUrls(pickupTotesArr[next])
+    }
+  }
+
+  async function handleConfirmRemoveSave(toteId: string, pickupTotesArr: ToteWithPickup[]) {
+    setConfirmSaving(true)
+    const tote = totes.find(t => t.id === toteId)
+    if (!tote) { setConfirmSaving(false); return }
+    const newItems = tote.items.filter((_, i) => !confirmRemoveSelected.has(i))
+    await supabase.from('totes').update({ items: newItems }).eq('id', toteId)
+    const updated = { ...tote, items: newItems } as ToteWithPickup
+    setTotes(prev => prev.map(t => t.id === toteId ? updated : t))
+    setConfirmRemoveSelected(new Set())
+    setConfirmChangeMode(null)
+    setConfirmSaving(false)
+    // Reload photos for the refreshed tote view
+    loadConfirmUrls(updated)
   }
 
   const homeTotes = totes.filter(t => t.status === 'empty_at_customer' && !t.pickup_requested)
@@ -379,7 +445,7 @@ function MyItemsContent() {
                 Preferred date:{' '}
                 {new Date(pickupDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
               </p>
-              <button onClick={() => { setPickupStep('select'); setPickupSelected(new Set()); setPickupDate(''); setTab('browse') }} className="btn-primary w-full">
+              <button onClick={() => { setPickupStep('select'); setPickupSelected(new Set()); setPickupDate(''); setConfirmIdx(0); setConfirmChangeMode(null); setConfirmRemoveSelected(new Set()); setConfirmUrls([]); setTab('browse') }} className="btn-primary w-full">
                 Back to My Items
               </button>
             </div>
@@ -412,7 +478,185 @@ function MyItemsContent() {
                 Confirm Pickup Request
               </button>
             </div>
-          ) : homeTotes.length === 0 ? (
+          ) : pickupStep === 'confirm' ? (() => {
+            const pickupTotesArr = totes.filter(t => pickupSelected.has(t.id))
+            const currentTote = pickupTotesArr[confirmIdx]
+            if (!currentTote) return null
+            return (
+              <div className="space-y-4">
+                {/* Progress header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-brand-navy">Confirm Inventory</h2>
+                    <p className="text-sm text-gray-500 mt-0.5">
+                      Tote {confirmIdx + 1} of {pickupTotesArr.length}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    {pickupTotesArr.map((_, i) => (
+                      <div
+                        key={i}
+                        className={`h-2 rounded-full transition-all ${
+                          i < confirmIdx ? 'w-4 bg-green-400' :
+                          i === confirmIdx ? 'w-6 bg-brand-blue' :
+                          'w-4 bg-gray-200'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tote card */}
+                <div className="card space-y-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">📦</span>
+                    <div>
+                      <h3 className="font-black text-brand-navy">{currentTote.tote_name ?? currentTote.id}</h3>
+                      <p className="text-xs text-gray-400">ID: {currentTote.id}</p>
+                    </div>
+                  </div>
+
+                  {/* Items list — remove mode shows checkboxes */}
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700 mb-2">
+                      Items ({currentTote.items.length})
+                      {confirmChangeMode === 'remove' && (
+                        <span className="ml-2 text-xs text-red-500 font-normal">Tap items to remove</span>
+                      )}
+                    </p>
+                    {currentTote.items.length === 0 ? (
+                      <p className="text-gray-400 text-sm">No items logged in this tote.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {currentTote.items.map((item, i) => (
+                          <button
+                            key={i}
+                            disabled={confirmChangeMode !== 'remove'}
+                            onClick={() => {
+                              if (confirmChangeMode !== 'remove') return
+                              setConfirmRemoveSelected(prev => {
+                                const next = new Set(prev)
+                                if (next.has(i)) next.delete(i); else next.add(i)
+                                return next
+                              })
+                            }}
+                            className={`w-full flex items-center gap-2 text-sm py-2 px-2 rounded-lg transition-all text-left ${
+                              confirmChangeMode === 'remove'
+                                ? confirmRemoveSelected.has(i)
+                                  ? 'bg-red-50 border border-red-200 text-red-700 line-through'
+                                  : 'hover:bg-red-50 hover:border-red-200 border border-transparent text-gray-700'
+                                : 'text-gray-700'
+                            }`}
+                          >
+                            {confirmChangeMode === 'remove' ? (
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                                confirmRemoveSelected.has(i) ? 'bg-red-500 border-red-500' : 'border-gray-300'
+                              }`}>
+                                {confirmRemoveSelected.has(i) && <X className="w-3 h-3 text-white" />}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-xs w-5 flex-shrink-0">{i + 1}.</span>
+                            )}
+                            <span className="flex-1">{item.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Photos */}
+                  {confirmChangeMode !== 'remove' && (
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-2">Photos</p>
+                      {confirmLoadingUrls ? (
+                        <div className="flex gap-2">
+                          {[1,2].map(i => <div key={i} className="w-20 h-20 rounded-xl bg-gray-200 animate-pulse" />)}
+                        </div>
+                      ) : confirmUrls.length > 0 ? (
+                        <div className="flex gap-2 flex-wrap">
+                          {confirmUrls.map((url, i) => (
+                            <div key={i} className="w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-gray-400 text-sm">
+                          <ImageOff className="w-4 h-4" />
+                          No photos for this tote
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Action area */}
+                {confirmChangeMode === null && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => confirmAdvance(pickupTotesArr)}
+                      className="w-full flex items-center justify-center gap-2 bg-green-500 text-white font-bold py-4 rounded-2xl hover:bg-green-600 active:scale-[0.98] transition-all"
+                    >
+                      <CheckCircle2 className="w-5 h-5" />
+                      Looks Good — {confirmIdx + 1 < pickupTotesArr.length ? 'Next Tote' : 'Choose Pickup Date'}
+                    </button>
+                    <button
+                      onClick={() => setConfirmChangeMode('choice')}
+                      className="w-full py-3 rounded-2xl border border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50 transition-colors"
+                    >
+                      Changes Needed
+                    </button>
+                  </div>
+                )}
+
+                {confirmChangeMode === 'choice' && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-gray-700 text-center">What needs to change?</p>
+                    <button
+                      onClick={() => router.push(`/add-items`)}
+                      className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white font-bold py-4 rounded-2xl hover:bg-blue-900 active:scale-[0.98] transition-all"
+                    >
+                      <Plus className="w-5 h-5" />
+                      Add Items to This Tote
+                    </button>
+                    <button
+                      onClick={() => { setConfirmChangeMode('remove'); setConfirmRemoveSelected(new Set()) }}
+                      className="w-full flex items-center justify-center gap-2 border-2 border-red-300 text-red-600 font-bold py-4 rounded-2xl hover:bg-red-50 active:scale-[0.98] transition-all"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                      Remove Items from This Tote
+                    </button>
+                    <button
+                      onClick={() => setConfirmChangeMode(null)}
+                      className="w-full py-3 text-gray-400 text-sm font-semibold"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                {confirmChangeMode === 'remove' && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => handleConfirmRemoveSave(currentTote.id, pickupTotesArr)}
+                      disabled={confirmRemoveSelected.size === 0 || confirmSaving}
+                      className="w-full flex items-center justify-center gap-2 bg-red-500 text-white font-bold py-4 rounded-2xl hover:bg-red-600 active:scale-[0.98] transition-all disabled:opacity-40"
+                    >
+                      {confirmSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                      Remove {confirmRemoveSelected.size} Item{confirmRemoveSelected.size !== 1 ? 's' : ''}
+                    </button>
+                    <button
+                      onClick={() => { setConfirmChangeMode(null); setConfirmRemoveSelected(new Set()) }}
+                      className="w-full py-3 text-gray-400 text-sm font-semibold"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })() : homeTotes.length === 0 ? (
             <div className="text-center py-12">
               <Truck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500 font-medium">No totes ready for pickup</p>
@@ -424,7 +668,7 @@ function MyItemsContent() {
 
               {/* Request All button */}
               <button
-                onClick={() => { setPickupSelected(new Set(homeTotes.map(t => t.id))); setPickupStep('date') }}
+                onClick={() => { const all = new Set(homeTotes.map(t => t.id)); setPickupSelected(all); enterConfirmStep(all) }}
                 className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white rounded-2xl px-6 py-4 font-bold hover:bg-blue-900 active:scale-[0.98] transition-all"
               >
                 <Truck className="w-5 h-5" />
@@ -457,10 +701,10 @@ function MyItemsContent() {
 
               {pickupSelected.size > 0 && (
                 <button
-                  onClick={() => setPickupStep('date')}
+                  onClick={() => enterConfirmStep(pickupSelected)}
                   className="btn-primary w-full"
                 >
-                  Request Pickup for {pickupSelected.size} Tote{pickupSelected.size !== 1 ? 's' : ''}
+                  Review &amp; Confirm Inventory ({pickupSelected.size} Tote{pickupSelected.size !== 1 ? 's' : ''})
                 </button>
               )}
             </>
