@@ -63,7 +63,7 @@ function ScanPageInner() {
       return
     }
 
-    // Fallback: canvas → html5-qrcode
+    // Fallback: canvas frames → html5-qrcode
     import('html5-qrcode').then(({ Html5Qrcode }) => {
       const scanFrame = () => {
         if (cancelledRef.current || detectedRef.current) return
@@ -116,7 +116,7 @@ function ScanPageInner() {
       video.addEventListener('canplay', onReady, { once: true })
       video.addEventListener('playing', onReady, { once: true })
 
-      // Hard fallback after 3 s
+      // Hard fallback: start detecting after 3 s no matter what
       const fallback = setTimeout(() => startDetecting(), 3000)
     }).catch(err => {
       if (cancelledRef.current) return
@@ -134,19 +134,21 @@ function ScanPageInner() {
 
   return (
     /*
-     * KEY LAYOUT RULE — fixes Android Chrome black video:
-     * The <video> element must NOT be inside a position:fixed or transform ancestor.
-     * Use position:relative + overflow:hidden on the wrapper instead.
-     * Overlays use position:absolute (relative to this wrapper).
+     * Video must NOT be inside a position:fixed or transform ancestor —
+     * that triggers the Android Chrome GPU compositing black-screen bug.
+     *
+     * Layout here: a plain position:relative wrapper that fills the
+     * viewport. Video is a normal block element (width/height 100%).
+     * All overlays use position:absolute (not fixed).
      */
     <div style={{
       position: 'relative',
-      width: '100%',
+      width: '100vw',
       height: '100dvh',
       overflow: 'hidden',
       background: '#000',
     }}>
-      {/* Camera feed — plain block, no special positioning */}
+      {/* Camera feed */}
       <video
         ref={videoRef}
         autoPlay
@@ -161,7 +163,7 @@ function ScanPageInner() {
       />
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-      {/* Header overlay */}
+      {/* Header */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -257,11 +259,11 @@ function ScanPageInner() {
   )
 }
 
-// ─── Page wrapper with Suspense (required for useSearchParams) ────────────────
+// ─── Page export with Suspense (required for useSearchParams) ─────────────────
 export default function ScanPage() {
   return (
     <Suspense fallback={
-      <div style={{ width: '100%', height: '100dvh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: '100vw', height: '100dvh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ width: 40, height: 40, borderRadius: '50%', border: '4px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', animation: 'spin 0.8s linear infinite' }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       </div>
