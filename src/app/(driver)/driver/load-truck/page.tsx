@@ -236,7 +236,14 @@ export default function LoadTruckPage() {
             <p className="text-green-700 font-semibold text-sm">All {expectedTotes.length} totes loaded!</p>
           </div>
           <button
-            onClick={() => router.push('/driver')}
+            onClick={async () => {
+              if (!route) return
+              await supabase
+                .from('routes')
+                .update({ status: 'in_progress' })
+                .eq('id', route.id)
+              router.push('/driver')
+            }}
             className="w-full bg-brand-navy text-white rounded-2xl py-4 font-black text-base hover:bg-blue-900 active:scale-[0.98] transition-all shadow-lg"
           >
             Done Loading — Start Route

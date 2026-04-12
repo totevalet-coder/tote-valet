@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
-import { MapPin, ChevronDown, ChevronUp, Navigation, CheckCircle2, AlertCircle, Clock, Package } from 'lucide-react'
+import { MapPin, ChevronDown, ChevronUp, Navigation, CheckCircle2, AlertCircle, Clock, Package, Truck } from 'lucide-react'
 
 export default function DriverRoutePage() {
   const router = useRouter()
@@ -15,6 +15,7 @@ export default function DriverRoutePage() {
   const [driverId, setDriverId] = useState('')
   const [loading, setLoading] = useState(true)
   const [expandedStop, setExpandedStop] = useState<number | null>(null)
+  const [showLoadWarning, setShowLoadWarning] = useState(false)
 
   const loadRoute = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser()
@@ -59,6 +60,10 @@ export default function DriverRoutePage() {
 
   function startDelivering() {
     if (!route) return
+    if (route.status === 'planned') {
+      setShowLoadWarning(true)
+      return
+    }
     const firstPending = (route.stops as RouteStop[]).find(s => !s.completed)
     if (firstPending) {
       openMaps(firstPending.address)
@@ -258,6 +263,36 @@ export default function DriverRoutePage() {
           <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="font-bold text-gray-400 text-lg">No Route Today</p>
           <p className="text-gray-400 text-sm mt-1">Check back when your route is assigned.</p>
+        </div>
+      )}
+      {/* Must load truck warning */}
+      {showLoadWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6 bg-black/50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Truck className="w-6 h-6 text-orange-600" />
+              </div>
+              <div>
+                <h2 className="font-black text-brand-navy text-lg leading-tight">Load Truck First</h2>
+                <p className="text-gray-500 text-sm mt-0.5">You must load and scan all totes before starting your route.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setShowLoadWarning(false)}
+                className="flex-1 py-3 rounded-xl border-2 border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50 transition-colors"
+              >
+                Dismiss
+              </button>
+              <button
+                onClick={() => { setShowLoadWarning(false); router.push('/driver/load-truck') }}
+                className="flex-1 py-3 rounded-xl bg-brand-navy text-white font-bold text-sm hover:bg-blue-900 transition-colors"
+              >
+                Load Truck
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
