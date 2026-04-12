@@ -14,6 +14,8 @@ import {
   X,
 } from 'lucide-react'
 import type { ToteItem } from '@/types/database'
+import BarcodeScannerModal from '@/components/ui/BarcodeScannerModal'
+
 const MAX_PHOTOS = 5
 
 interface DetectedItem {
@@ -40,9 +42,10 @@ export default function AddItemsPage() {
   const [photoPaths, setPhotoPaths] = useState<string[]>([])      // storage paths
   const [photoThumbs, setPhotoThumbs] = useState<string[]>([])    // local blob URLs for preview
   const [customerId, setCustomerId] = useState<string | null>(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
   const photoRef = useRef<HTMLInputElement>(null)
 
-  // Load customer ID on mount; also consume any pending scan result from /scan page
+  // Load customer ID on mount for storage path
   useEffect(() => {
     async function load() {
       const { data: userData } = await supabase.auth.getUser()
@@ -51,16 +54,6 @@ export default function AddItemsPage() {
       if (c) setCustomerId(c.id)
     }
     load()
-
-    // Consume barcode result left by /scan page
-    const pending = sessionStorage.getItem('scannedBarcode')
-    if (pending) {
-      sessionStorage.removeItem('scannedBarcode')
-      setBarcodeValue(pending)
-      setStep('details')
-      lookupTote(pending)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // When a barcode is entered/scanned, look it up in the DB
@@ -125,8 +118,10 @@ export default function AddItemsPage() {
     setPhotoThumbs(prev => prev.filter((_, i) => i !== idx))
   }
 
-  function openScanner() {
-    router.push('/scan?return=/add-items')
+  async function handleBarcodeDetected(value: string) {
+    setScannerOpen(false)
+    setBarcodeValue(value)
+    await lookupTote(value)
   }
 
   async function handleSave() {
@@ -182,6 +177,14 @@ export default function AddItemsPage() {
 
   return (
     <div className="px-5 pt-6 pb-24 space-y-5">
+
+      {scannerOpen && (
+        <BarcodeScannerModal
+          onDetected={handleBarcodeDetected}
+          onClose={() => setScannerOpen(false)}
+          hint="Point the camera at the barcode on your tote"
+        />
+      )}
 
       {/* Back button */}
       {step === 'details' && (
@@ -314,7 +317,7 @@ export default function AddItemsPage() {
               className="input-field"
             />
             <button
-              onClick={openScanner}
+              onClick={() => setScannerOpen(true)}
               className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-brand-blue rounded-2xl py-5 text-brand-blue font-semibold hover:bg-brand-blue/5 transition-colors mt-2"
             >
               <QrCode className="w-6 h-6" />
