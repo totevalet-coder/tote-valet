@@ -568,10 +568,7 @@ export default function StopDetailPage() {
                   className="input-field resize-none"
                 />
               </div>
-            </div>
 
-            {/* Fixed footer button */}
-            <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0">
               <button
                 onClick={handleForceComplete}
                 disabled={!forceCode || !forceNotes.trim() || forceSaving}
@@ -579,6 +576,9 @@ export default function StopDetailPage() {
               >
                 {forceSaving ? 'Saving...' : 'Submit Force Complete'}
               </button>
+
+              {/* Bottom padding so button clears mobile nav bar */}
+              <div className="h-4" />
             </div>
           </div>
         </>
