@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
-import { ScanLine, Package, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Package, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react'
+import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 
 interface DropZoneTote {
   id: string
@@ -21,18 +22,15 @@ interface SortDestination {
 export default function SortPage() {
   const router = useRouter()
   const supabase = createClient()
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const [dropZone, setDropZone] = useState<DropZoneTote[]>([])
   const [sortedCount, setSortedCount] = useState(0)
   const [loading, setLoading] = useState(true)
 
-  const [scanValue, setScanValue] = useState('')
   const [scanError, setScanError] = useState('')
   const [destination, setDestination] = useState<SortDestination | null>(null)
   const [scannedTote, setScannedTote] = useState<DropZoneTote | null>(null)
 
-  const [zoneScan, setZoneScan] = useState('')
   const [zoneError, setZoneError] = useState('')
   const [zoneSaved, setZoneSaved] = useState(false)
 
@@ -59,10 +57,7 @@ export default function SortPage() {
 
   useEffect(() => { loadDropZone() }, [loadDropZone])
 
-  async function handleToteScan(e: React.FormEvent) {
-    e.preventDefault()
-    const val = scanValue.trim().toUpperCase()
-    if (!val) return
+  async function handleToteScan(val: string) {
     setScanError('')
     setDestination(null)
     setScannedTote(null)
@@ -71,7 +66,6 @@ export default function SortPage() {
     const tote = dropZone.find(t => t.id === val)
     if (!tote) {
       setScanError(`${val} is not in the Sort Drop Zone. Check that it has been picked.`)
-      setScanValue('')
       return
     }
 
@@ -89,26 +83,20 @@ export default function SortPage() {
 
     if (!foundRoute) {
       setScanError(`No route found for ${val} today. Contact admin.`)
-      setScanValue('')
       return
     }
 
     const { data: driver } = await supabase.from('customers').select('name').eq('id', foundRoute.driverId).single()
     setScannedTote(tote)
     setDestination({ routeId: foundRoute.id, driverName: driver?.name ?? 'Unknown Driver', zoneLabel: foundRoute.id })
-    setScanValue('')
-    setTimeout(() => inputRef.current?.focus(), 100)
   }
 
-  async function handleZoneScan(e: React.FormEvent) {
-    e.preventDefault()
-    const val = zoneScan.trim().toUpperCase()
-    if (!val || !destination || !scannedTote) return
+  async function handleZoneScan(val: string) {
+    if (!destination || !scannedTote) return
     setZoneError('')
 
     if (val !== destination.routeId) {
       setZoneError(`Wrong zone! Expected ${destination.routeId}, scanned ${val}. Try again.`)
-      setZoneScan('')
       return
     }
 
@@ -118,13 +106,11 @@ export default function SortPage() {
     }).eq('id', scannedTote.id)
 
     setZoneSaved(true)
-    setZoneScan('')
     await loadDropZone()
     setTimeout(() => {
       setDestination(null)
       setScannedTote(null)
       setZoneSaved(false)
-      inputRef.current?.focus()
     }, 1500)
   }
 
@@ -166,15 +152,7 @@ export default function SortPage() {
         )}
 
         {!destination && (
-          <form onSubmit={handleToteScan} className="flex gap-2">
-            <div className="relative flex-1">
-              <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input ref={inputRef} autoFocus type="text" value={scanValue}
-                onChange={e => { setScanValue(e.target.value); setScanError('') }}
-                placeholder="Scan tote barcode..." className="input-field pl-9 text-sm" />
-            </div>
-            <button type="submit" className="bg-brand-navy text-white rounded-xl px-4 font-semibold text-sm">OK</button>
-          </form>
+          <BarcodeScanInput onScan={handleToteScan} placeholder="Or enter tote ID…" />
         )}
 
         {destination && scannedTote && !zoneSaved && (
@@ -206,15 +184,7 @@ export default function SortPage() {
                 <p className="text-sm text-red-700">{zoneError}</p>
               </div>
             )}
-            <form onSubmit={handleZoneScan} className="flex gap-2">
-              <div className="relative flex-1">
-                <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input autoFocus type="text" value={zoneScan}
-                  onChange={e => { setZoneScan(e.target.value); setZoneError('') }}
-                  placeholder={`Scan ${destination.zoneLabel}...`} className="input-field pl-9 text-sm" />
-              </div>
-              <button type="submit" className="bg-brand-navy text-white rounded-xl px-4 font-semibold text-sm">OK</button>
-            </form>
+            <BarcodeScanInput onScan={handleZoneScan} placeholder={`Or enter ${destination.zoneLabel}…`} />
             <button onClick={() => { setDestination(null); setScannedTote(null); setScanError(''); setZoneError('') }}
               className="w-full text-center text-xs text-gray-400 hover:text-gray-600 font-semibold">
               ← Cancel, scan different tote

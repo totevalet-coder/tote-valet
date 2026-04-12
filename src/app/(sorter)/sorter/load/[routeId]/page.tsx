@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
-import { ScanLine, CheckCircle2, AlertTriangle, Package, ChevronLeft, Truck } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Package, ChevronLeft, Truck } from 'lucide-react'
+import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 
 interface LoadTote {
   id: string
@@ -17,14 +18,12 @@ export default function LoadVerificationPage() {
   const router = useRouter()
   const { routeId } = useParams<{ routeId: string }>()
   const supabase = createClient()
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const [route, setRoute] = useState<Route | null>(null)
   const [driverName, setDriverName] = useState('')
   const [totes, setTotes] = useState<LoadTote[]>([])
   const [loading, setLoading] = useState(true)
 
-  const [scanValue, setScanValue] = useState('')
   const [scanError, setScanError] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -56,32 +55,16 @@ export default function LoadVerificationPage() {
 
     setTotes(enriched)
     setLoading(false)
-    setTimeout(() => inputRef.current?.focus(), 100)
   }, [supabase, routeId, router])
 
   useEffect(() => { load() }, [load])
 
-  function handleScan(e: React.FormEvent) {
-    e.preventDefault()
-    const val = scanValue.trim().toUpperCase()
-    if (!val) return
+  function handleScan(val: string) {
     setScanError('')
-
     const idx = totes.findIndex(t => t.id === val)
-    if (idx === -1) {
-      setScanError(`${val} is not on this route. Check the tote ID.`)
-      setScanValue('')
-      return
-    }
-    if (totes[idx].loaded) {
-      setScanError(`${val} already scanned.`)
-      setScanValue('')
-      return
-    }
-
+    if (idx === -1) { setScanError(`${val} is not on this route. Check the tote ID.`); return }
+    if (totes[idx].loaded) { setScanError(`${val} already scanned.`); return }
     setTotes(prev => prev.map((t, i) => i === idx ? { ...t, loaded: true } : t))
-    setScanValue('')
-    setTimeout(() => inputRef.current?.focus(), 50)
   }
 
   async function handleConfirm() {
@@ -184,21 +167,7 @@ export default function LoadVerificationPage() {
               <p className="text-sm text-yellow-700">{scanError}</p>
             </div>
           )}
-          <form onSubmit={handleScan} className="flex gap-2">
-            <div className="relative flex-1">
-              <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                ref={inputRef}
-                autoFocus
-                type="text"
-                value={scanValue}
-                onChange={e => { setScanValue(e.target.value); setScanError('') }}
-                placeholder="Scan tote barcode..."
-                className="input-field pl-9 text-sm"
-              />
-            </div>
-            <button type="submit" className="bg-brand-navy text-white rounded-xl px-4 font-semibold text-sm">OK</button>
-          </form>
+          <BarcodeScanInput onScan={handleScan} placeholder="Or enter tote ID…" />
         </div>
       )}
 

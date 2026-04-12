@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
-import { ScanLine, CheckCircle2, Package, X, Truck } from 'lucide-react'
+import { CheckCircle2, Package, X, Truck } from 'lucide-react'
+import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 
 interface LoadedTote {
   toteId: string
@@ -15,12 +16,9 @@ interface LoadedTote {
 export default function LoadTruckPage() {
   const router = useRouter()
   const supabase = createClient()
-  const inputRef = useRef<HTMLInputElement>(null)
-
   const [route, setRoute] = useState<Route | null>(null)
   const [expectedTotes, setExpectedTotes] = useState<{ toteId: string; sealNumber: string | null; customerName: string }[]>([])
   const [loadedTotes, setLoadedTotes] = useState<LoadedTote[]>([])
-  const [scanValue, setScanValue] = useState('')
   const [scanError, setScanError] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -68,32 +66,18 @@ export default function LoadTruckPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  function handleScan(e: React.FormEvent) {
-    e.preventDefault()
-    const val = scanValue.trim().toUpperCase()
-    if (!val) return
-
+  function handleScan(val: string) {
     setScanError('')
-
-    // Check if already loaded
     if (loadedTotes.some(t => t.toteId === val)) {
       setScanError(`${val} already scanned.`)
-      setScanValue('')
       return
     }
-
-    // Check if in expected list
     const expected = expectedTotes.find(t => t.toteId === val)
     if (!expected) {
       setScanError(`${val} is not on today's route. Check the tote ID.`)
-      setScanValue('')
-      inputRef.current?.focus()
       return
     }
-
     setLoadedTotes(prev => [...prev, expected])
-    setScanValue('')
-    inputRef.current?.focus()
   }
 
   function removeTote(toteId: string) {
@@ -144,28 +128,17 @@ export default function LoadTruckPage() {
       </div>
 
       {/* Scan input */}
-      <form onSubmit={handleScan} className="space-y-3">
-        <div className="relative">
-          <ScanLine className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            ref={inputRef}
-            autoFocus
-            type="text"
-            value={scanValue}
-            onChange={e => { setScanValue(e.target.value); setScanError('') }}
-            placeholder="Scan or type tote ID (e.g. TV-1001)"
-            className="input-field pl-11"
-          />
-        </div>
+      <div className="space-y-2">
+        <BarcodeScanInput
+          onScan={handleScan}
+          placeholder="Or type tote ID (e.g. TV-1001)"
+        />
         {scanError && (
           <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-4 py-2">
             {scanError}
           </p>
         )}
-        <button type="submit" className="btn-primary w-full">
-          Add Tote
-        </button>
-      </form>
+      </div>
 
       {/* Loaded list */}
       {loadedTotes.length > 0 && (

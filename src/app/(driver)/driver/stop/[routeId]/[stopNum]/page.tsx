@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
 import {
-  MapPin, ScanLine, CheckCircle2, AlertTriangle, Package,
+  MapPin, CheckCircle2, AlertTriangle, Package,
   ChevronLeft, ArrowRight, AlertCircle, X
 } from 'lucide-react'
+import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 
 type ScanPhase = 'tote' | 'seal'
 type ToteVerifyState = 'pending' | 'verified' | 'mismatch_1' | 'error'
@@ -35,8 +36,6 @@ export default function StopDetailPage() {
   const routeId = params.routeId as string
   const stopNum = parseInt(params.stopNum as string, 10)
   const supabase = createClient()
-  const inputRef = useRef<HTMLInputElement>(null)
-
   const [route, setRoute] = useState<Route | null>(null)
   const [stop, setStop] = useState<RouteStop | null>(null)
   const [driverId, setDriverId] = useState('')
@@ -47,7 +46,6 @@ export default function StopDetailPage() {
   const [scanPhase, setScanPhase] = useState<ScanPhase>('tote')
   const [currentToteIdx, setCurrentToteIdx] = useState(0)
   const [toteStates, setToteStates] = useState<ToteState[]>([])
-  const [scanValue, setScanValue] = useState('')
   const [scanError, setScanError] = useState('')
 
   // Force complete state
@@ -113,13 +111,10 @@ export default function StopDetailPage() {
     setScanning(true)
     setScanPhase('tote')
     setCurrentToteIdx(0)
-    setTimeout(() => inputRef.current?.focus(), 100)
   }
 
-  function handleScan(e: React.FormEvent) {
-    e.preventDefault()
-    const val = scanValue.trim().toUpperCase()
-    if (!val || !stop) return
+  function handleScan(val: string) {
+    if (!stop) return
     setScanError('')
 
     const currentTote = toteStates[currentToteIdx]
@@ -160,8 +155,6 @@ export default function StopDetailPage() {
         }
       }
     }
-    setScanValue('')
-    setTimeout(() => inputRef.current?.focus(), 50)
   }
 
   function markVerified(idx: number) {
@@ -460,23 +453,10 @@ export default function StopDetailPage() {
             </div>
           )}
 
-          <form onSubmit={handleScan} className="flex gap-2">
-            <div className="relative flex-1">
-              <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                ref={inputRef}
-                type="text"
-                value={scanValue}
-                onChange={e => { setScanValue(e.target.value); setScanError('') }}
-                placeholder="Scan barcode..."
-                className="input-field pl-9 text-sm"
-                autoFocus
-              />
-            </div>
-            <button type="submit" className="bg-brand-navy text-white rounded-xl px-4 font-semibold text-sm">
-              OK
-            </button>
-          </form>
+          <BarcodeScanInput
+            onScan={handleScan}
+            placeholder={scanPhase === 'tote' ? 'Or enter tote ID…' : 'Or enter seal number…'}
+          />
 
           {/* Partial delivery button */}
           <button

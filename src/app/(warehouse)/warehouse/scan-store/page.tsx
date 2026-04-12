@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ScanLine, CheckCircle2, AlertTriangle, Package, ArrowRight, Clock } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Package, ArrowRight, Clock } from 'lucide-react'
 import { Suspense } from 'react'
+import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 
 type Tab = 'receive' | 'unstowed'
 type ReceiveStep = 1 | 2 | 'done'
@@ -26,20 +27,17 @@ interface UnstowedTote {
 function ScanStoreContent() {
   const searchParams = useSearchParams()
   const supabase = createClient()
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const [tab, setTab] = useState<Tab>(searchParams.get('tab') === 'unstowed' ? 'unstowed' : 'receive')
   const [step, setStep] = useState<ReceiveStep>(1)
   const [staffId, setStaffId] = useState('')
 
   // Step 1 state
-  const [toteScan, setToteScan] = useState('')
   const [scannedTote, setScannedTote] = useState<ScannedTote | null>(null)
   const [toteError, setToteError] = useState('')
   const [toteLoading, setToteLoading] = useState(false)
 
   // Step 2 state
-  const [binScan, setBinScan] = useState('')
   const [binError, setBinError] = useState('')
   const [binLoading, setBinLoading] = useState(false)
 
@@ -88,14 +86,8 @@ function ScanStoreContent() {
     if (tab === 'unstowed') loadUnstowed()
   }, [tab, loadUnstowed])
 
-  useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 100)
-  }, [step, tab])
 
-  async function handleToteScan(e: React.FormEvent) {
-    e.preventDefault()
-    const val = toteScan.trim().toUpperCase()
-    if (!val) return
+  async function handleToteScan(val: string) {
     setToteError('')
     setToteLoading(true)
 
@@ -131,13 +123,10 @@ function ScanStoreContent() {
 
     setToteLoading(false)
     setStep(2)
-    setToteScan('')
   }
 
-  async function handleBinScan(e: React.FormEvent) {
-    e.preventDefault()
-    const val = binScan.trim().toUpperCase()
-    if (!val || !scannedTote) return
+  async function handleBinScan(val: string) {
+    if (!scannedTote) return
     setBinError('')
     setBinLoading(true)
 
@@ -253,29 +242,17 @@ function ScanStoreContent() {
                 <p className="text-xs font-bold text-brand-navy uppercase mb-1">Step 1</p>
                 <p className="text-sm text-gray-600">Scan the tote barcode to identify it.</p>
               </div>
-              <form onSubmit={handleToteScan} className="space-y-3">
-                <div className="relative">
-                  <ScanLine className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    ref={inputRef}
-                    autoFocus
-                    type="text"
-                    value={toteScan}
-                    onChange={e => { setToteScan(e.target.value); setToteError('') }}
-                    placeholder="Scan tote barcode (e.g. TV-1001)"
-                    className="input-field pl-11"
-                  />
+              <BarcodeScanInput
+                onScan={handleToteScan}
+                placeholder="Or enter tote ID (e.g. TV-1001)"
+                disabled={toteLoading}
+              />
+              {toteError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-700">{toteError}</p>
                 </div>
-                {toteError && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-red-700">{toteError}</p>
-                  </div>
-                )}
-                <button type="submit" disabled={toteLoading} className="btn-primary w-full">
-                  {toteLoading ? 'Looking up...' : 'Confirm Tote'}
-                </button>
-              </form>
+              )}
             </div>
           )}
 
@@ -321,29 +298,17 @@ function ScanStoreContent() {
                 <p className="text-sm text-gray-600">Scan the bin barcode where you&apos;re placing this tote.</p>
               </div>
 
-              <form onSubmit={handleBinScan} className="space-y-3">
-                <div className="relative">
-                  <ScanLine className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    ref={inputRef}
-                    autoFocus
-                    type="text"
-                    value={binScan}
-                    onChange={e => { setBinScan(e.target.value); setBinError('') }}
-                    placeholder="Scan bin barcode (e.g. A-01)"
-                    className="input-field pl-11"
-                  />
+              <BarcodeScanInput
+                onScan={handleBinScan}
+                placeholder="Or enter bin ID (e.g. A-01)"
+                disabled={binLoading}
+              />
+              {binError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-700">{binError}</p>
                 </div>
-                {binError && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-red-700">{binError}</p>
-                  </div>
-                )}
-                <button type="submit" disabled={binLoading} className="btn-primary w-full">
-                  {binLoading ? 'Storing...' : 'Place in Bin'}
-                </button>
-              </form>
+              )}
 
               <button onClick={() => { setStep(1); setScannedTote(null) }} className="w-full text-center text-sm text-gray-400 hover:text-gray-600 font-semibold">
                 ← Back to Tote Scan
