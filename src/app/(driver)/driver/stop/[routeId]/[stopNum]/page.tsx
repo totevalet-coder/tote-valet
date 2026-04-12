@@ -285,8 +285,9 @@ export default function StopDetailPage() {
       openMapsTo(nextStop.address)
       router.push(`/driver/stop/${routeId}/${nextStop.stop_number}`)
     } else {
-      // All stops done — go to driver home (Return Totes button will appear there)
-      router.push('/driver')
+      // All stops done — open navigation back to warehouse, then go to drop totes
+      openMapsTo(STATION_ADDRESS)
+      router.push(`/driver/return/${routeId}`)
     }
   }
 
@@ -349,7 +350,7 @@ export default function StopDetailPage() {
           {nextStop ? (
             <>Confirm & Navigate to Next Stop <ArrowRight className="w-5 h-5" /></>
           ) : (
-            <>Head Back to Warehouse <ArrowRight className="w-5 h-5" /></>
+            <>Navigate to Warehouse &amp; Drop Totes <ArrowRight className="w-5 h-5" /></>
           )}
         </button>
       </div>

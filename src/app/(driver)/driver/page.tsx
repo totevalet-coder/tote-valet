@@ -133,7 +133,7 @@ export default function DriverRoutePage() {
           className="w-full flex items-center justify-center gap-3 bg-orange-500 text-white rounded-2xl py-4 font-black text-base shadow-lg hover:bg-orange-600 active:scale-[0.98] transition-all"
         >
           <PackageCheck className="w-5 h-5" />
-          Return Totes to Warehouse
+          Drop Totes at Warehouse
         </button>
       )}
 
