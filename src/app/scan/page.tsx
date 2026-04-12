@@ -9,24 +9,20 @@ function ScanPageInner() {
   const searchParams = useSearchParams()
   const returnTo = searchParams.get('return') ?? '/add-items'
 
-  // Hidden video — receives the camera stream but is NOT shown on screen.
-  // Visible canvas — draws frames from the video every animation frame.
-  // This bypasses the GPU compositing issue that makes <video> black on some
-  // Android Chrome builds.
-  const videoRef    = useRef<HTMLVideoElement>(null)
-  const displayRef  = useRef<HTMLCanvasElement>(null)  // what the user sees
-  const scanRef     = useRef<HTMLCanvasElement>(null)  // used for barcode decoding
+  const videoRef   = useRef<HTMLVideoElement>(null)
+  const displayRef = useRef<HTMLCanvasElement>(null)
+  const scanRef    = useRef<HTMLCanvasElement>(null)
 
-  const streamRef   = useRef<MediaStream | null>(null)
-  const drawRafRef  = useRef<number | null>(null)
-  const scanRafRef  = useRef<number | null>(null)
-  const detectedRef = useRef(false)
+  const streamRef    = useRef<MediaStream | null>(null)
+  const drawRafRef   = useRef<number | null>(null)
+  const scanRafRef   = useRef<number | null>(null)
+  const detectedRef  = useRef(false)
   const cancelledRef = useRef(false)
 
-  const [status, setStatus] = useState<'starting' | 'scanning' | 'error'>('starting')
+  const [status, setStatus]   = useState<'starting' | 'scanning' | 'error'>('starting')
   const [errorMsg, setErrorMsg] = useState('')
+  const [debug, setDebug]     = useState('waiting…')
 
-  // ── stop everything ───────────────────────────────────────────────────────
   const stopAll = useCallback(() => {
     cancelledRef.current = true
     if (drawRafRef.current) { cancelAnimationFrame(drawRafRef.current); drawRafRef.current = null }
@@ -45,7 +41,7 @@ function ScanPageInner() {
     router.push(returnTo)
   }, [stopAll, router, returnTo])
 
-  // ── scan loop (BarcodeDetector → canvas fallback) ─────────────────────────
+  // ── scan loop ─────────────────────────────────────────────────────────────
   const startScanning = useCallback(() => {
     if (cancelledRef.current) return
     setStatus('scanning')
@@ -62,8 +58,8 @@ function ScanPageInner() {
           scanRafRef.current = requestAnimationFrame(tick); return
         }
         detector.detect(video)
-          .then((results: Array<{ rawValue: string }>) => {
-            if (results.length > 0) onDetected(results[0].rawValue)
+          .then((r: Array<{ rawValue: string }>) => {
+            if (r.length > 0) onDetected(r[0].rawValue)
             else scanRafRef.current = requestAnimationFrame(tick)
           })
           .catch(() => { scanRafRef.current = requestAnimationFrame(tick) })
@@ -72,79 +68,88 @@ function ScanPageInner() {
       return
     }
 
-    // Fallback: scan from the hidden canvas
+    // canvas fallback
     import('html5-qrcode').then(({ Html5Qrcode }) => {
       const tick = () => {
         if (cancelledRef.current || detectedRef.current) return
-        const canvas = scanRef.current
-        if (!canvas || canvas.width === 0) {
-          setTimeout(() => { if (!cancelledRef.current) scanRafRef.current = requestAnimationFrame(tick) }, 300)
-          return
-        }
-        canvas.toBlob(async blob => {
+        const c = scanRef.current
+        if (!c || c.width === 0) { setTimeout(() => { if (!cancelledRef.current) tick() }, 300); return }
+        c.toBlob(async blob => {
           if (!blob || cancelledRef.current || detectedRef.current) return
-          try {
-            const result = await Html5Qrcode.scanFile(new File([blob], 'f.jpg', { type: 'image/jpeg' }), false)
-            onDetected(result)
-          } catch {
-            setTimeout(() => { if (!cancelledRef.current) scanRafRef.current = requestAnimationFrame(tick) }, 300)
-          }
+          try { onDetected(await Html5Qrcode.scanFile(new File([blob], 'f.jpg', { type: 'image/jpeg' }), false)) }
+          catch { setTimeout(() => { if (!cancelledRef.current) tick() }, 300) }
         }, 'image/jpeg', 0.85)
       }
-      scanRafRef.current = requestAnimationFrame(tick)
+      tick()
     })
   }, [onDetected])
 
-  // ── draw loop: video → visible canvas ─────────────────────────────────────
+  // ── draw loop: video → canvas (runs every frame) ──────────────────────────
   const startDrawLoop = useCallback(() => {
+    let debugTick = 0
     const draw = () => {
       if (cancelledRef.current) return
-      const video   = videoRef.current
-      const display = displayRef.current
-      const scan    = scanRef.current
-      if (video && video.readyState >= 2 && video.videoWidth > 0) {
-        const w = video.videoWidth, h = video.videoHeight
-        if (display) { display.width = w; display.height = h; display.getContext('2d')?.drawImage(video, 0, 0) }
-        if (scan)    { scan.width    = w; scan.height    = h; scan.getContext('2d')?.drawImage(video, 0, 0) }
+      const video = videoRef.current
+      const disp  = displayRef.current
+      const scan  = scanRef.current
+
+      if (video) {
+        // Update debug info every ~30 frames
+        if (debugTick++ % 30 === 0) {
+          const tracks = streamRef.current?.getVideoTracks() ?? []
+          setDebug(
+            `rs:${video.readyState} ${video.videoWidth}×${video.videoHeight} ` +
+            `paused:${video.paused} tracks:${tracks.length} ` +
+            `state:${tracks[0]?.readyState ?? 'none'}`
+          )
+        }
+
+        if (video.readyState >= 2 && video.videoWidth > 0) {
+          const w = video.videoWidth, h = video.videoHeight
+          if (disp) { disp.width = w; disp.height = h; disp.getContext('2d')?.drawImage(video, 0, 0) }
+          if (scan) { scan.width  = w; scan.height  = h; scan.getContext('2d')?.drawImage(video, 0, 0) }
+        }
       }
       drawRafRef.current = requestAnimationFrame(draw)
     }
     drawRafRef.current = requestAnimationFrame(draw)
   }, [])
 
-  // ── mount: get camera stream ──────────────────────────────────────────────
+  // ── mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     cancelledRef.current = false
     detectedRef.current = false
 
-    navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
-      audio: false,
-    }).then(stream => {
-      if (cancelledRef.current) { stream.getTracks().forEach(t => t.stop()); return }
-      streamRef.current = stream
-      const video = videoRef.current
-      if (!video) return
+    // Use the simplest possible constraint — no facingMode —
+    // to rule out camera-selection issues on this device.
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      .then(stream => {
+        if (cancelledRef.current) { stream.getTracks().forEach(t => t.stop()); return }
+        streamRef.current = stream
+        const video = videoRef.current
+        if (!video) return
 
-      video.srcObject = stream
-      video.play().catch(() => {})
+        video.srcObject = stream
+        // Do NOT call play() here — let autoPlay handle it.
+        // Calling play() on a non-user-gesture frame can silently fail on Android.
 
-      startDrawLoop()
+        startDrawLoop()
 
-      const go = () => { clearTimeout(fb); startScanning() }
-      video.addEventListener('canplay', go, { once: true })
-      video.addEventListener('playing', go, { once: true })
-      const fb = setTimeout(() => startScanning(), 3000)
-    }).catch(err => {
-      if (cancelledRef.current) return
-      const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
-      setErrorMsg(
-        msg.includes('permission') || msg.includes('notallowed') || msg.includes('denied')
-          ? 'Camera permission denied. Allow camera access in your browser settings.'
-          : `Camera error: ${err instanceof Error ? err.message : String(err)}`
-      )
-      setStatus('error')
-    })
+        const go = () => { clearTimeout(fb); startScanning() }
+        video.addEventListener('canplay', go, { once: true })
+        video.addEventListener('playing', go, { once: true })
+        const fb = setTimeout(() => startScanning(), 4000)
+      })
+      .catch(err => {
+        if (cancelledRef.current) return
+        const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+        setErrorMsg(
+          msg.includes('permission') || msg.includes('notallowed') || msg.includes('denied')
+            ? 'Camera permission denied. Allow camera access in your browser settings.'
+            : `Camera error: ${err instanceof Error ? err.message : String(err)}`
+        )
+        setStatus('error')
+      })
 
     return () => stopAll()
   }, [startDrawLoop, startScanning, stopAll])
@@ -152,20 +157,33 @@ function ScanPageInner() {
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#000', overflow: 'hidden' }}>
 
-      {/* Hidden video — only used as frame source, never shown */}
-      <video ref={videoRef} muted playsInline style={{ display: 'none' }} />
+      {/*
+       * Video element: kept in render flow with opacity 0.01 (not display:none).
+       * Android Chrome stops decoding frames for display:none video elements.
+       * opacity:0.01 keeps the decode pipeline active but makes it invisible.
+       */}
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        style={{
+          position: 'absolute', inset: 0,
+          width: '100%', height: '100%',
+          objectFit: 'cover',
+          opacity: 0.01,
+        }}
+      />
 
-      {/* Hidden scan canvas — used by the html5-qrcode fallback */}
+      {/* Hidden scan canvas (html5-qrcode fallback) */}
       <canvas ref={scanRef} style={{ display: 'none' }} />
 
-      {/* Visible display canvas — what the user actually sees */}
+      {/* Visible display canvas — draws frames from video */}
       <canvas
         ref={displayRef}
         style={{
-          display: 'block',
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
+          position: 'absolute', inset: 0,
+          width: '100%', height: '100%',
         }}
       />
 
@@ -230,9 +248,7 @@ function ScanPageInner() {
           <button onClick={handleClose} style={{
             padding: '12px 24px', background: 'rgba(255,255,255,0.15)', color: '#fff',
             border: '1px solid rgba(255,255,255,0.2)', borderRadius: 12, fontWeight: 600, fontSize: 14, cursor: 'pointer',
-          }}>
-            Enter ID Manually
-          </button>
+          }}>Enter ID Manually</button>
         </div>
       )}
 
@@ -249,11 +265,20 @@ function ScanPageInner() {
           <button onClick={handleClose} style={{
             color: 'rgba(255,255,255,0.4)', fontSize: 12, background: 'none',
             border: 'none', cursor: 'pointer', textDecoration: 'underline',
-          }}>
-            Enter ID manually instead
-          </button>
+          }}>Enter ID manually instead</button>
         </div>
       )}
+
+      {/* Debug overlay — tells us exactly what the video element is doing */}
+      <div style={{
+        position: 'absolute', bottom: 120, left: 0, right: 0, zIndex: 10,
+        textAlign: 'center', pointerEvents: 'none',
+      }}>
+        <span style={{
+          background: 'rgba(0,0,0,0.7)', color: '#0f0', fontSize: 11,
+          fontFamily: 'monospace', padding: '4px 8px', borderRadius: 6,
+        }}>{debug}</span>
+      </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
