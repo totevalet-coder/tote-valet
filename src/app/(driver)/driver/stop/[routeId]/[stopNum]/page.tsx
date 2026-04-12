@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
 import {
-  MapPin, CheckCircle2, AlertTriangle, Package,
+  MapPin, ScanLine, CheckCircle2, AlertTriangle, Package,
   ChevronLeft, ArrowRight, AlertCircle, X
 } from 'lucide-react'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
@@ -122,7 +122,6 @@ export default function StopDetailPage() {
     if (scanPhase === 'tote') {
       if (val !== currentTote.toteId) {
         setScanError(`Expected ${currentTote.toteId} — scanned ${val}. Try again.`)
-        setScanValue('')
         return
       }
       // Tote matched — now scan seal if it has one
