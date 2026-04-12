@@ -4,154 +4,96 @@ import { useEffect, useRef, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { X } from 'lucide-react'
 
-// ─── Inner component (needs useSearchParams) ─────────────────────────────────
 function ScanPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const returnTo = searchParams.get('return') ?? '/add-items'
 
   const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const rafRef = useRef<number | null>(null)
+  const controlsRef = useRef<{ stop: () => void } | null>(null)
   const detectedRef = useRef(false)
-  const cancelledRef = useRef(false)
-  const scanStartedRef = useRef(false)
+  const mountedRef = useRef(true)
 
   const [status, setStatus] = useState<'starting' | 'scanning' | 'error'>('starting')
   const [errorMsg, setErrorMsg] = useState('')
 
-  const stopAll = useCallback(() => {
-    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
-    streamRef.current?.getTracks().forEach(t => t.stop())
-    streamRef.current = null
+  const stopScanner = useCallback(() => {
+    try { controlsRef.current?.stop() } catch { /* ignore */ }
+    controlsRef.current = null
   }, [])
 
   const handleClose = useCallback(() => {
-    stopAll()
+    mountedRef.current = false
+    stopScanner()
     router.back()
-  }, [stopAll, router])
+  }, [stopScanner, router])
 
-  const startDetecting = useCallback(() => {
-    if (cancelledRef.current || scanStartedRef.current) return
-    scanStartedRef.current = true
-    setStatus('scanning')
+  useEffect(() => {
+    mountedRef.current = true
+    detectedRef.current = false
 
-    if ('BarcodeDetector' in window) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const detector = new (window as any).BarcodeDetector({
-        formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf'],
-      })
-      const tick = () => {
-        if (cancelledRef.current || detectedRef.current) return
-        const video = videoRef.current
-        if (!video || video.readyState < 2) { rafRef.current = requestAnimationFrame(tick); return }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        detector.detect(video).then((results: Array<{ rawValue: string }>) => {
-          if (!cancelledRef.current && !detectedRef.current && results.length > 0) {
-            detectedRef.current = true
-            stopAll()
-            const value = results[0].rawValue.trim().toUpperCase()
-            sessionStorage.setItem('scannedBarcode', value)
-            router.push(returnTo)
-          } else {
-            rafRef.current = requestAnimationFrame(tick)
-          }
-        }).catch(() => { rafRef.current = requestAnimationFrame(tick) })
-      }
-      rafRef.current = requestAnimationFrame(tick)
-      return
-    }
+    async function start() {
+      try {
+        const { BrowserMultiFormatReader } = await import('@zxing/browser')
+        const reader = new BrowserMultiFormatReader()
 
-    // Fallback: canvas frames → html5-qrcode
-    import('html5-qrcode').then(({ Html5Qrcode }) => {
-      const scanFrame = () => {
-        if (cancelledRef.current || detectedRef.current) return
-        const video = videoRef.current
-        const canvas = canvasRef.current
-        if (!canvas || !video || video.readyState < 2 || video.videoWidth === 0) {
-          setTimeout(() => { if (!cancelledRef.current) rafRef.current = requestAnimationFrame(scanFrame) }, 300)
-          return
-        }
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        canvas.getContext('2d')?.drawImage(video, 0, 0)
-        canvas.toBlob(async blob => {
-          if (!blob || cancelledRef.current || detectedRef.current) return
-          try {
-            const result = await Html5Qrcode.scanFile(new File([blob], 'f.jpg', { type: 'image/jpeg' }), false)
-            if (!detectedRef.current && !cancelledRef.current) {
+        if (!videoRef.current || !mountedRef.current) return
+
+        setStatus('scanning')
+
+        const controls = await reader.decodeFromConstraints(
+          { video: { facingMode: { ideal: 'environment' } } },
+          videoRef.current,
+          (result, err) => {
+            if (!mountedRef.current || detectedRef.current) return
+            if (result) {
               detectedRef.current = true
-              stopAll()
-              const value = result.trim().toUpperCase()
+              stopScanner()
+              const value = result.getText().trim().toUpperCase()
               sessionStorage.setItem('scannedBarcode', value)
               router.push(returnTo)
             }
-          } catch {
-            setTimeout(() => { if (!cancelledRef.current) rafRef.current = requestAnimationFrame(scanFrame) }, 300)
+            // err fires on every frame with no barcode — normal, ignore it
+            void err
           }
-        }, 'image/jpeg', 0.85)
+        )
+
+        if (mountedRef.current) {
+          controlsRef.current = controls
+        } else {
+          controls.stop()
+        }
+      } catch (err) {
+        if (!mountedRef.current) return
+        const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+        setErrorMsg(
+          msg.includes('permission') || msg.includes('notallowed') || msg.includes('denied')
+            ? 'Camera permission denied. Allow camera access in your browser settings.'
+            : `Camera error: ${err instanceof Error ? err.message : String(err)}`
+        )
+        setStatus('error')
       }
-      rafRef.current = requestAnimationFrame(scanFrame)
-    })
-  }, [stopAll, router, returnTo])
+    }
 
-  useEffect(() => {
-    cancelledRef.current = false
-    scanStartedRef.current = false
+    start()
 
-    navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
-      audio: false,
-    }).then(stream => {
-      if (cancelledRef.current) { stream.getTracks().forEach(t => t.stop()); return }
-      streamRef.current = stream
-      const video = videoRef.current
-      if (!video) return
-
-      video.srcObject = stream
-      video.play().catch(() => {})
-
-      const onReady = () => { clearTimeout(fallback); startDetecting() }
-      video.addEventListener('canplay', onReady, { once: true })
-      video.addEventListener('playing', onReady, { once: true })
-
-      // Hard fallback: start detecting after 3 s no matter what
-      const fallback = setTimeout(() => startDetecting(), 3000)
-    }).catch(err => {
-      if (cancelledRef.current) return
-      const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
-      setErrorMsg(
-        msg.includes('permission') || msg.includes('notallowed') || msg.includes('denied')
-          ? 'Camera permission denied. Allow camera access in your browser settings.'
-          : `Camera error: ${err instanceof Error ? err.message : String(err)}`
-      )
-      setStatus('error')
-    })
-
-    return () => { cancelledRef.current = true; stopAll() }
-  }, [startDetecting, stopAll])
+    return () => {
+      mountedRef.current = false
+      stopScanner()
+    }
+  }, [stopScanner, router, returnTo])
 
   return (
-    /*
-     * Video must NOT be inside a position:fixed or transform ancestor —
-     * that triggers the Android Chrome GPU compositing black-screen bug.
-     *
-     * Layout here: a plain position:relative wrapper that fills the
-     * viewport. Video is a normal block element (width/height 100%).
-     * All overlays use position:absolute (not fixed).
-     */
     <div style={{
       position: 'relative',
       width: '100vw',
-      height: '100dvh',
+      height: '100vh',
       overflow: 'hidden',
       background: '#000',
     }}>
-      {/* Camera feed */}
+      {/* ZXing attaches to and manages this video element */}
       <video
         ref={videoRef}
-        autoPlay
         muted
         playsInline
         style={{
@@ -161,7 +103,6 @@ function ScanPageInner() {
           objectFit: 'cover',
         }}
       />
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
 
       {/* Header */}
       <div style={{
@@ -178,6 +119,21 @@ function ScanPageInner() {
           <X style={{ color: '#fff', width: 20, height: 20 }} />
         </button>
       </div>
+
+      {/* Starting spinner */}
+      {status === 'starting' && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 2,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%',
+            border: '4px solid rgba(255,255,255,0.2)', borderTopColor: '#fff',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, margin: 0 }}>Starting camera…</p>
+        </div>
+      )}
 
       {/* Scanning reticle */}
       {status === 'scanning' && (
@@ -201,22 +157,7 @@ function ScanPageInner() {
         </div>
       )}
 
-      {/* Starting spinner */}
-      {status === 'starting' && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 2,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-        }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: '50%',
-            border: '4px solid rgba(255,255,255,0.2)', borderTopColor: '#fff',
-            animation: 'spin 0.8s linear infinite',
-          }} />
-          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, margin: 0 }}>Starting camera…</p>
-        </div>
-      )}
-
-      {/* Error state */}
+      {/* Error */}
       {status === 'error' && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 2,
@@ -235,7 +176,7 @@ function ScanPageInner() {
         </div>
       )}
 
-      {/* Footer hint */}
+      {/* Footer */}
       {status === 'scanning' && (
         <div style={{
           position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 2,
@@ -259,11 +200,10 @@ function ScanPageInner() {
   )
 }
 
-// ─── Page export with Suspense (required for useSearchParams) ─────────────────
 export default function ScanPage() {
   return (
     <Suspense fallback={
-      <div style={{ width: '100vw', height: '100dvh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: '100vw', height: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ width: 40, height: 40, borderRadius: '50%', border: '4px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', animation: 'spin 0.8s linear infinite' }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       </div>
