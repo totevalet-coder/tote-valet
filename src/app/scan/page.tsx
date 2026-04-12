@@ -19,9 +19,8 @@ function ScanPageInner() {
   const detectedRef  = useRef(false)
   const cancelledRef = useRef(false)
 
-  const [status, setStatus]   = useState<'starting' | 'scanning' | 'error'>('starting')
+  const [status, setStatus]    = useState<'starting' | 'scanning' | 'error'>('starting')
   const [errorMsg, setErrorMsg] = useState('')
-  const [debug, setDebug]     = useState('waiting…')
 
   const stopAll = useCallback(() => {
     cancelledRef.current = true
@@ -86,7 +85,6 @@ function ScanPageInner() {
 
   // ── draw loop: video → canvas (runs every frame) ──────────────────────────
   const startDrawLoop = useCallback(() => {
-    let debugTick = 0
     const draw = () => {
       if (cancelledRef.current) return
       const video = videoRef.current
@@ -95,15 +93,6 @@ function ScanPageInner() {
 
       if (video) {
         // Update debug info every ~30 frames
-        if (debugTick++ % 30 === 0) {
-          const tracks = streamRef.current?.getVideoTracks() ?? []
-          setDebug(
-            `rs:${video.readyState} ${video.videoWidth}×${video.videoHeight} ` +
-            `paused:${video.paused} tracks:${tracks.length} ` +
-            `state:${tracks[0]?.readyState ?? 'none'}`
-          )
-        }
-
         if (video.readyState >= 2 && video.videoWidth > 0) {
           const w = video.videoWidth, h = video.videoHeight
           if (disp) { disp.width = w; disp.height = h; disp.getContext('2d')?.drawImage(video, 0, 0) }
@@ -120,9 +109,10 @@ function ScanPageInner() {
     cancelledRef.current = false
     detectedRef.current = false
 
-    // Use the simplest possible constraint — no facingMode —
-    // to rule out camera-selection issues on this device.
-    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false,
+    })
       .then(stream => {
         if (cancelledRef.current) { stream.getTracks().forEach(t => t.stop()); return }
         streamRef.current = stream
@@ -269,18 +259,8 @@ function ScanPageInner() {
         </div>
       )}
 
-      {/* Debug overlay — tells us exactly what the video element is doing */}
-      <div style={{
-        position: 'absolute', bottom: 120, left: 0, right: 0, zIndex: 10,
-        textAlign: 'center', pointerEvents: 'none',
-      }}>
-        <span style={{
-          background: 'rgba(0,0,0,0.7)', color: '#0f0', fontSize: 11,
-          fontFamily: 'monospace', padding: '4px 8px', borderRadius: 6,
-        }}>{debug}</span>
-      </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+<style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }
