@@ -47,10 +47,11 @@ export default function LoadTruckPage() {
       const r = routes[0] as Route
       setRoute(r)
 
-      // Build expected totes list from all stops
+      // Build expected totes list — delivery stops only (pickup totes are already at customer)
       const stops = r.stops as RouteStop[]
       const allTotes: { toteId: string; sealNumber: string | null; customerName: string }[] = []
       for (const stop of stops) {
+        if (stop.type !== 'delivery') continue
         stop.tote_ids.forEach((toteId, i) => {
           allTotes.push({
             toteId,
@@ -84,7 +85,8 @@ export default function LoadTruckPage() {
     setLoadedTotes(prev => prev.filter(t => t.toteId !== toteId))
   }
 
-  const allLoaded = expectedTotes.length > 0 && loadedTotes.length === expectedTotes.length
+  // allLoaded is true when all delivery totes are scanned, OR when route has no deliveries (pickup-only)
+  const allLoaded = loadedTotes.length === expectedTotes.length
 
   if (loading) {
     return (
@@ -112,7 +114,7 @@ export default function LoadTruckPage() {
         <p className="text-white/60 text-xs font-medium">Route {route.id}</p>
         <h1 className="font-black text-xl">Load Truck</h1>
         <p className="text-white/60 text-sm mt-1">
-          Scan each tote before departing.
+          Scan each delivery tote before departing.
         </p>
         <div className="mt-3 flex items-center gap-3">
           <div className="bg-white/10 rounded-xl px-4 py-2 flex-1 text-center">
@@ -172,6 +174,14 @@ export default function LoadTruckPage() {
             ))}
           </div>
         </section>
+      )}
+
+      {/* Pickup-only route notice */}
+      {expectedTotes.length === 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+          <p className="text-sm font-bold text-brand-navy">Pickup-only route</p>
+          <p className="text-xs text-gray-500 mt-0.5">No delivery totes to load. Tap below when ready to depart.</p>
+        </div>
       )}
 
       {/* Expected totes not yet loaded */}
