@@ -18,9 +18,10 @@ interface Props {
   onScan: (value: string) => void
   placeholder?: string
   disabled?: boolean
+  large?: boolean
 }
 
-export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manually', disabled }: Props) {
+export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manually', disabled, large }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [manualValue, setManualValue] = useState('')
   const [decoding, setDecoding] = useState(false)
@@ -85,12 +86,13 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
         type="button"
         onClick={() => { setDecodeError(''); fileRef.current?.click() }}
         disabled={busy}
-        className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-brand-blue rounded-2xl py-4 text-brand-blue font-semibold hover:bg-brand-blue/5 active:bg-brand-blue/10 transition-colors disabled:opacity-50"
+        className={`w-full flex items-center justify-center gap-3 border-2 border-dashed border-brand-blue rounded-2xl text-brand-blue font-semibold hover:bg-brand-blue/5 active:bg-brand-blue/10 transition-colors disabled:opacity-50 ${large ? 'py-7 text-xl flex-col' : 'py-4'}`}
       >
         {decoding
-          ? <Loader2 className="w-5 h-5 animate-spin" />
-          : <Camera className="w-5 h-5" />}
-        {decoding ? 'Reading barcode…' : 'Scan Barcode (Take Photo)'}
+          ? <Loader2 className={large ? 'w-9 h-9 animate-spin' : 'w-5 h-5 animate-spin'} />
+          : <Camera className={large ? 'w-9 h-9' : 'w-5 h-5'} />}
+        {decoding ? 'Reading barcode…' : 'Scan Barcode'}
+        {large && !decoding && <span className="text-sm font-normal text-brand-blue/70">Tap to take photo</span>}
       </button>
       <input
         ref={fileRef}
@@ -110,20 +112,20 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
       {/* Secondary — manual */}
       <form onSubmit={handleManual} className="flex gap-2">
         <div className="relative flex-1">
-          <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <ScanLine className={`absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 ${large ? 'w-5 h-5' : 'w-4 h-4'}`} />
           <input
             type="text"
             value={manualValue}
             onChange={e => { setManualValue(e.target.value); setDecodeError('') }}
             placeholder={placeholder}
-            className="input-field pl-9 text-sm"
+            className={`input-field pl-9 ${large ? 'text-base py-4' : 'text-sm'}`}
             disabled={busy}
           />
         </div>
         <button
           type="submit"
           disabled={busy || !manualValue.trim()}
-          className="bg-brand-navy text-white rounded-xl px-4 font-semibold text-sm disabled:opacity-40"
+          className={`bg-brand-navy text-white rounded-xl font-semibold disabled:opacity-40 ${large ? 'px-5 text-base' : 'px-4 text-sm'}`}
         >
           Add
         </button>

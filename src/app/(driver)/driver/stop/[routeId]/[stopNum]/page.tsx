@@ -435,32 +435,44 @@ export default function StopDetailPage() {
 
       {/* Scanning workflow */}
       {scanning && currentTote && !allVerified && (
-        <div className="card border-2 border-brand-blue/30 bg-brand-blue/5">
-          <p className="text-xs font-bold text-brand-blue uppercase mb-1">
-            {scanPhase === 'tote' ? 'Scan Tote Barcode' : 'Scan Security Seal'}
-          </p>
-          <p className="text-sm font-bold text-brand-navy mb-3">
-            {scanPhase === 'tote'
-              ? `Expecting: ${currentTote.toteId}`
-              : `Expecting seal: ${currentTote.sealNumber ?? 'none'}`}
-          </p>
+        <div className="card border-2 border-brand-blue/30 bg-brand-blue/5 space-y-4">
+          {/* Phase label — large and obvious */}
+          <div className="text-center pt-2">
+            <p className={`font-black text-3xl tracking-tight ${scanPhase === 'tote' ? 'text-brand-blue' : 'text-purple-600'}`}>
+              {scanPhase === 'tote' ? 'Scan Tote Barcode' : 'Scan Security Seal'}
+            </p>
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mt-1">
+              {currentToteIdx + 1} of {toteStates.length}
+            </p>
+          </div>
+
+          {/* Expecting ID — very prominent */}
+          <div className={`rounded-2xl px-5 py-4 text-center ${scanPhase === 'tote' ? 'bg-brand-navy' : 'bg-purple-700'}`}>
+            <p className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
+              {scanPhase === 'tote' ? 'Expecting Tote ID' : 'Expecting Seal Number'}
+            </p>
+            <p className="text-white font-black text-2xl font-mono tracking-tight">
+              {scanPhase === 'tote' ? currentTote.toteId : (currentTote.sealNumber ?? 'none')}
+            </p>
+          </div>
 
           {scanError && (
-            <div className="mb-3 bg-yellow-50 border border-yellow-300 rounded-xl px-3 py-2 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-yellow-700">{scanError}</p>
+            <div className="bg-yellow-50 border border-yellow-300 rounded-xl px-3 py-3 flex items-start gap-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-yellow-700 font-medium">{scanError}</p>
             </div>
           )}
 
           <BarcodeScanInput
             onScan={handleScan}
             placeholder={scanPhase === 'tote' ? 'Or enter tote ID…' : 'Or enter seal number…'}
+            large
           />
 
           {/* Partial delivery button */}
           <button
             onClick={() => setShowPartial(true)}
-            className="mt-3 w-full text-center text-xs text-red-500 hover:text-red-700 font-semibold underline"
+            className="w-full text-center text-sm text-red-500 hover:text-red-700 font-semibold underline pb-1"
           >
             Can&apos;t find remaining totes — report partial delivery
           </button>
@@ -472,10 +484,19 @@ export default function StopDetailPage() {
         <div className="space-y-3">
           <button
             onClick={startScanning}
-            className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white rounded-2xl py-4 font-black text-base hover:bg-blue-900 active:scale-[0.98] transition-all shadow-lg"
+            className={`w-full rounded-3xl py-8 px-6 flex flex-col items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-xl ${
+              stop.type === 'pickup'
+                ? 'bg-orange-500 hover:bg-orange-600'
+                : 'bg-brand-blue hover:bg-blue-500'
+            }`}
           >
-            <ScanLine className="w-5 h-5" />
-            {stop.type === 'pickup' ? 'Pickup Totes' : 'Deliver Totes'}
+            <ScanLine className="w-10 h-10 text-white" />
+            <span className="text-white font-black text-3xl tracking-tight">
+              {stop.type === 'pickup' ? 'Pickup Totes' : 'Deliver Totes'}
+            </span>
+            <span className="text-white/70 text-sm font-medium">
+              {stop.tote_ids.length} tote{stop.tote_ids.length !== 1 ? 's' : ''} at this stop
+            </span>
           </button>
 
           <button
