@@ -109,34 +109,7 @@ function ScanPageInner() {
     cancelledRef.current = false
     detectedRef.current = false
 
-    // Enumerate cameras and pick the rear-facing one by device ID.
-    // facingMode hints are unreliable on many Android devices — explicit
-    // deviceId is the only way to guarantee the back camera is selected.
-    const getBackCameraStream = async (): Promise<MediaStream> => {
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      const cameras = devices.filter(d => d.kind === 'videoinput')
-
-      // Prefer any camera whose label suggests rear/back/environment
-      const rearByLabel = cameras.find(d =>
-        /back|rear|environment/i.test(d.label)
-      )
-      // Fallback: last camera in the list (Android puts back camera last)
-      const preferred = rearByLabel ?? cameras[cameras.length - 1]
-
-      if (preferred?.deviceId) {
-        return navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: preferred.deviceId } },
-          audio: false,
-        })
-      }
-      // Last resort: simple environment hint
-      return navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      })
-    }
-
-    getBackCameraStream()
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
       .then(stream => {
         if (cancelledRef.current) { stream.getTracks().forEach(t => t.stop()); return }
         streamRef.current = stream
