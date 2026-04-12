@@ -20,7 +20,6 @@ export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props
   useEffect(() => {
     let cancelled = false
 
-    // Small delay to guarantee the reader div is in the DOM
     const t = setTimeout(async () => {
       try {
         const { Html5Qrcode } = await import('html5-qrcode')
@@ -31,7 +30,7 @@ export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props
 
         await scanner.start(
           { facingMode: 'environment' },
-          { fps: 10 },           // bare minimum — no qrbox, no aspectRatio
+          { fps: 10 },
           (decoded: string) => {
             if (cancelled || detectedRef.current) return
             detectedRef.current = true
@@ -39,7 +38,7 @@ export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props
               if (!cancelled) onDetected(decoded.trim().toUpperCase())
             })
           },
-          () => {},              // per-frame no-result — ignore
+          () => {},
         )
 
         if (!cancelled) setStatus('scanning')
@@ -49,11 +48,11 @@ export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props
         if (msg.includes('permission') || msg.includes('notallowed') || msg.includes('denied')) {
           setErrorMsg('Camera permission denied. Allow camera access in your browser settings.')
         } else {
-          setErrorMsg(`Camera error: ${err instanceof Error ? err.message : String(err)}`)
+          setErrorMsg(`Error: ${err instanceof Error ? err.message : String(err)}`)
         }
         setStatus('error')
       }
-    }, 150)
+    }, 200)
 
     return () => {
       cancelled = true
@@ -69,56 +68,97 @@ export default function BarcodeScannerModal({ onDetected, onClose, hint }: Props
   }
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 50,
+      background: '#000', display: 'flex', flexDirection: 'column',
+    }}>
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-12 pb-3 flex-shrink-0">
-        <h2 className="text-white font-bold text-lg">Scan Tote Barcode</h2>
-        <button onClick={handleClose}
-          className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center">
-          <X className="w-5 h-5 text-white" />
+      {/* Header — absolute so it doesn't affect reader sizing */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '48px 20px 16px',
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%)',
+      }}>
+        <h2 style={{ color: '#fff', fontWeight: 700, fontSize: 18, margin: 0 }}>
+          Scan Tote Barcode
+        </h2>
+        <button onClick={handleClose} style={{
+          width: 36, height: 36, borderRadius: '50%',
+          background: 'rgba(255,255,255,0.15)', border: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        }}>
+          <X style={{ color: '#fff', width: 20, height: 20 }} />
         </button>
       </div>
 
-      {/* html5-qrcode mounts its own video inside this div */}
+      {/* Reader — full viewport, no constraints */}
       <div
         id={READER_ID}
-        className="flex-1 w-full overflow-hidden"
-        style={{ background: '#000' }}
+        style={{ width: '100%', height: '100%', background: '#000' }}
       />
 
-      {/* Spinner overlaid while starting */}
-      {status === 'starting' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
-          <div className="w-10 h-10 rounded-full border-4 border-white/30 border-t-white animate-spin" />
-          <p className="text-white/70 text-sm font-medium">Starting camera…</p>
-        </div>
-      )}
-
-      {/* Error */}
-      {status === 'error' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-8 gap-5">
-          <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-3xl">📷</div>
-          <p className="text-white text-sm text-center leading-relaxed">{errorMsg}</p>
-          <button onClick={handleClose}
-            className="px-6 py-3 bg-white/15 text-white rounded-xl font-semibold text-sm border border-white/20">
-            Enter ID Manually
-          </button>
-        </div>
-      )}
-
-      {/* Footer */}
+      {/* Footer — absolute so it doesn't affect reader sizing */}
       {status === 'scanning' && (
-        <div className="flex-shrink-0 px-5 pt-4 pb-10 text-center space-y-3 bg-black">
-          <p className="text-white/80 text-sm font-medium">
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 20,
+          padding: '16px 20px 48px', textAlign: 'center',
+          background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%)',
+        }}>
+          <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, margin: '0 0 8px' }}>
             {hint ?? 'Point the camera at the barcode on your tote'}
           </p>
-          <button onClick={handleClose} className="text-white/40 text-xs underline underline-offset-2">
+          <button onClick={handleClose} style={{
+            color: 'rgba(255,255,255,0.4)', fontSize: 12,
+            background: 'none', border: 'none', cursor: 'pointer',
+            textDecoration: 'underline',
+          }}>
             Enter ID manually instead
           </button>
         </div>
       )}
 
+      {/* Starting spinner */}
+      {status === 'starting' && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 10,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 12,
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%',
+            border: '4px solid rgba(255,255,255,0.2)',
+            borderTopColor: '#fff',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, margin: 0 }}>
+            Starting camera…
+          </p>
+        </div>
+      )}
+
+      {/* Error */}
+      {status === 'error' && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 10,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          padding: '0 32px', gap: 20,
+        }}>
+          <div style={{ fontSize: 48 }}>📷</div>
+          <p style={{ color: '#fff', fontSize: 14, textAlign: 'center', lineHeight: 1.5, margin: 0 }}>
+            {errorMsg}
+          </p>
+          <button onClick={handleClose} style={{
+            padding: '12px 24px', background: 'rgba(255,255,255,0.15)',
+            color: '#fff', borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)',
+            fontWeight: 600, fontSize: 14, cursor: 'pointer',
+          }}>
+            Enter ID Manually
+          </button>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }
