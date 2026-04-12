@@ -220,9 +220,15 @@ export default function StopDetailPage() {
 
     // Update route stop
     const allDone = updatedStops.every(s => s.completed)
+    // If all done and any stops were pickups, driver must return totes to warehouse first
+    const hasPickups = updatedStops.some(s => s.type === 'pickup')
+    const nextStatus = allDone
+      ? (hasPickups ? 'returning' : 'complete')
+      : 'in_progress'
     await supabase.from('routes').update({
       stops: updatedStops,
-      status: allDone ? 'complete' : 'in_progress',
+      status: nextStatus,
+      ...(allDone && !hasPickups ? { completed_at: new Date().toISOString() } : {}),
     }).eq('id', routeId)
 
     // Find next stop

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
-import { MapPin, ChevronDown, ChevronUp, Navigation, CheckCircle2, AlertCircle, Clock, Package, Truck } from 'lucide-react'
+import { MapPin, ChevronDown, ChevronUp, Navigation, CheckCircle2, AlertCircle, Clock, Package, Truck, PackageCheck } from 'lucide-react'
 
 export default function DriverRoutePage() {
   const router = useRouter()
@@ -127,12 +127,14 @@ export default function DriverRoutePage() {
         </button>
       )}
 
-      {route && remaining === 0 && (
-        <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 text-center">
-          <CheckCircle2 className="w-8 h-8 text-green-600 mx-auto mb-2" />
-          <p className="font-bold text-green-700">All stops complete!</p>
-          <p className="text-green-600 text-sm mt-1">Head to End Route to sync.</p>
-        </div>
+      {route && remaining === 0 && route.status === 'returning' && (
+        <button
+          onClick={() => router.push(`/driver/return/${route.id}`)}
+          className="w-full flex items-center justify-center gap-3 bg-orange-500 text-white rounded-2xl py-4 font-black text-base shadow-lg hover:bg-orange-600 active:scale-[0.98] transition-all"
+        >
+          <PackageCheck className="w-5 h-5" />
+          Return Totes to Warehouse
+        </button>
       )}
 
       {/* Stop List */}

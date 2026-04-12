@@ -13,7 +13,7 @@ export type ToteStatus =
   | 'picked'
   | 'returned_to_station'
   | 'error'
-export type RouteStatus = 'planned' | 'in_progress' | 'complete'
+export type RouteStatus = 'planned' | 'in_progress' | 'returning' | 'complete'
 export type PickListStatus = 'ready' | 'in_progress' | 'complete'
 export type ErrorType = 'seal_mismatch' | 'force_complete' | 'partial_delivery' | 'unexpected_tote'
 
