@@ -4,13 +4,13 @@ import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { LayoutDashboard, Users, CreditCard, AlertTriangle, Settings, LogOut, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, AlertTriangle, Settings, LogOut, ShieldCheck, Navigation } from 'lucide-react'
 import { useRoleGuard } from '@/lib/useRoleGuard'
 
 const navItems = [
   { href: '/admin', label: 'Home', icon: LayoutDashboard, exact: true },
   { href: '/admin/customers', label: 'Customers', icon: Users, exact: false },
-  { href: '/admin/billing', label: 'Billing', icon: CreditCard, exact: false },
+  { href: '/admin/routes', label: 'Routes', icon: Navigation, exact: false },
   { href: '/admin/errors', label: 'Errors', icon: AlertTriangle, exact: false },
   { href: '/admin/settings', label: 'Settings', icon: Settings, exact: false },
 ]
