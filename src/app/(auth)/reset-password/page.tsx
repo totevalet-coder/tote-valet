@@ -19,20 +19,24 @@ function ResetPasswordForm() {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    // Listen for PASSWORD_RECOVERY event (fires after code exchange or hash token parse)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true)
-    })
-
-    // PKCE flow: Supabase sends ?code= in the URL — exchange it to trigger the event
     const code = searchParams.get('code')
-    if (code) {
-      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) setError('Reset link is invalid or expired. Please request a new one.')
-      })
-    }
 
-    return () => subscription.unsubscribe()
+    if (code) {
+      // PKCE flow: exchange the code directly and set ready on success
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) {
+          setError('Reset link is invalid or expired. Please request a new one.')
+        } else {
+          setReady(true)
+        }
+      })
+    } else {
+      // Legacy hash flow: Supabase client fires PASSWORD_RECOVERY from the URL hash
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') setReady(true)
+      })
+      return () => subscription.unsubscribe()
+    }
   }, [supabase, searchParams])
 
   async function handleSubmit(e: React.FormEvent) {
