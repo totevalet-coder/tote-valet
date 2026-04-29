@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Users, Navigation, Radio, AlertTriangle,
-  CreditCard, Settings, UserPlus, ChevronRight,
+  CreditCard, Settings, UserPlus, ChevronRight, Package,
   LogOut, ShieldCheck, Eye, X, MoreHorizontal
 } from 'lucide-react'
 import { useRoleGuard } from '@/lib/useRoleGuard'
@@ -25,10 +25,11 @@ const moreGroups = [
   {
     label: 'Operations',
     items: [
-      { href: '/admin',           label: 'Dashboard',     icon: LayoutDashboard, desc: 'Stats, alerts, quick actions' },
-      { href: '/admin/monitor',   label: 'Live Monitor',  icon: Radio,           desc: 'Real-time route progress' },
-      { href: '/admin/routes',    label: 'Routes',        icon: Navigation,      desc: 'Create & view all routes' },
-      { href: '/admin/errors',    label: 'Driver Errors', icon: AlertTriangle,   desc: 'Review & resolve flags' },
+      { href: '/admin',           label: 'Dashboard',        icon: LayoutDashboard, desc: 'Stats, alerts, quick actions' },
+      { href: '/admin/monitor',   label: 'Live Monitor',     icon: Radio,           desc: 'Real-time route progress' },
+      { href: '/admin/routes',    label: 'Routes',           icon: Navigation,      desc: 'Create & view all routes' },
+      { href: '/admin/totes',     label: 'Tote Inventory',   icon: Package,         desc: 'All totes with status filters' },
+      { href: '/admin/errors',    label: 'Driver Errors',    icon: AlertTriangle,   desc: 'Review & resolve flags' },
     ],
   },
   {
