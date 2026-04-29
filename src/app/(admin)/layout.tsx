@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { LayoutDashboard, Users, CreditCard, AlertTriangle, Settings, LogOut, ShieldCheck, Navigation, Eye, X } from 'lucide-react'
+import { LayoutDashboard, Users, AlertTriangle, Settings, LogOut, ShieldCheck, Navigation, Eye, X, Radio } from 'lucide-react'
 import { useRoleGuard } from '@/lib/useRoleGuard'
 import { setViewAsRole, type ViewAsRole } from '@/lib/adminViewAs'
 
@@ -12,8 +12,8 @@ const navItems = [
   { href: '/admin', label: 'Home', icon: LayoutDashboard, exact: true },
   { href: '/admin/customers', label: 'Customers', icon: Users, exact: false },
   { href: '/admin/routes', label: 'Routes', icon: Navigation, exact: false },
+  { href: '/admin/monitor', label: 'Monitor', icon: Radio, exact: false },
   { href: '/admin/errors', label: 'Errors', icon: AlertTriangle, exact: false },
-  { href: '/admin/settings', label: 'Settings', icon: Settings, exact: false },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
