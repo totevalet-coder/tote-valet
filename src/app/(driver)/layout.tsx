@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { MapPin, Package, CheckSquare, LogOut, Truck } from 'lucide-react'
 import { useRoleGuard } from '@/lib/useRoleGuard'
+import AdminViewingBanner from '@/components/ui/AdminViewingBanner'
 
 const navItems = [
   { href: '/driver', label: 'Route', icon: MapPin, exact: true },
@@ -19,7 +20,7 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
   const supabase = createClient()
   const [driverName, setDriverName] = useState('Driver')
   const [showSignOut, setShowSignOut] = useState(false)
-  const { checking } = useRoleGuard(['driver'])
+  const { checking } = useRoleGuard(['driver', 'admin'])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -43,6 +44,7 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center">
       <div className="w-full max-w-[430px] relative">
+        <AdminViewingBanner />
         {/* Topbar */}
         <header className="sticky top-0 z-30 bg-brand-navy px-5 py-4 flex items-center justify-between shadow-md">
           <div className="flex items-center gap-3">

@@ -44,6 +44,12 @@ export function useRoleGuard(allowedRoles: string[]) {
         return
       }
 
+      // Admin can view any portal (role switcher)
+      if (customer.role === 'admin' && !allowedRoles.includes('admin')) {
+        setChecking(false)
+        return
+      }
+
       if (!allowedRoles.includes(customer.role)) {
         router.replace(ROLE_HOME[customer.role] ?? '/landing')
         return
