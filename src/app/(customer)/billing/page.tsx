@@ -7,6 +7,7 @@ import { ChevronLeft, Download, Clock, CreditCard, Gift, CheckCircle2, Plus } fr
 import type { Tote } from '@/types/database'
 import CardSetupForm from '@/components/ui/CardSetupForm'
 import type { CardSetupResult } from '@/components/ui/CardSetupForm'
+import { FREE_EXCHANGES_PER_YEAR, GRACE_PERIOD_DAYS } from '@/lib/billing'
 
 interface CardInfo {
   last4: string
@@ -22,7 +23,7 @@ interface BillingLine {
   chargeType: 'monthly' | 'weekly'
 }
 
-const FREE_EXCHANGES_ALLOWED = 2
+const FREE_EXCHANGES_ALLOWED = FREE_EXCHANGES_PER_YEAR
 
 export default function BillingPage() {
   const router = useRouter()
@@ -82,12 +83,23 @@ export default function BillingPage() {
     load()
   }, [supabase, router])
 
+  // Grace period: if tote is empty_at_customer, pickup_requested, and updated within GRACE_PERIOD_DAYS
+  function isGrace(tote: Tote): boolean {
+    if (tote.status !== 'empty_at_customer') return false
+    if (!(tote as unknown as { pickup_requested?: boolean }).pickup_requested) return false
+    const updatedAt = (tote as unknown as { updated_at?: string }).updated_at
+    if (!updatedAt) return false
+    const days = (Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60 * 24)
+    return days <= GRACE_PERIOD_DAYS
+  }
+
   const billingLines: BillingLine[] = totes.map(t => {
     if (t.status === 'empty_at_customer') {
+      const grace = isGrace(t)
       return {
         toteName: t.tote_name ?? t.id,
-        status: 'Empty at Home',
-        charge: 1.0,
+        status: grace ? `Empty at Home · Grace period (${GRACE_PERIOD_DAYS}-day pickup window)` : 'Empty at Home',
+        charge: grace ? 0 : 1.0,
         chargeType: 'weekly',
       }
     }
@@ -365,7 +377,7 @@ export default function BillingPage() {
               <div>
                 <p className="text-sm font-bold text-brand-navy">Free Tote Exchanges</p>
                 <p className="text-xs text-gray-400">
-                  {Math.max(0, FREE_EXCHANGES_ALLOWED - freeExchangesUsed)} of {FREE_EXCHANGES_ALLOWED} remaining this month
+                  {Math.max(0, FREE_EXCHANGES_ALLOWED - freeExchangesUsed)} of {FREE_EXCHANGES_ALLOWED} remaining this year
                 </p>
               </div>
             </div>

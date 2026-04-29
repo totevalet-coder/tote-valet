@@ -322,6 +322,33 @@ create policy "errors_driver_insert" on errors
 -- bucket: invoice-pdfs      (private, authenticated read)
 
 -- ============================================================
+-- MIGRATIONS (run these in Supabase SQL editor after initial schema setup)
+-- ============================================================
+
+-- Added for grace period billing logic (Section 11.1):
+-- Tracks when a tote became empty_at_customer so the 8-day grace period can be applied.
+-- ALTER TABLE totes ADD COLUMN IF NOT EXISTS empty_since timestamptz;
+
+-- Added for pickup requests from customer app:
+-- ALTER TABLE totes ADD COLUMN IF NOT EXISTS pickup_requested boolean not null default false;
+
+-- Added for route returning status (driver drop-off flow):
+-- ALTER TYPE route_status ADD VALUE IF NOT EXISTS 'returning';
+
+-- tote_requests table (structured customer requests from the app):
+-- CREATE TABLE IF NOT EXISTS tote_requests (
+--   id              uuid primary key default uuid_generate_v4(),
+--   customer_id     uuid not null references customers(id) on delete cascade,
+--   type            text not null check (type in ('empty_tote_delivery', 'pickup')),
+--   quantity        int,
+--   tote_ids        text[] not null default '{}',
+--   preferred_date  date,
+--   status          text not null default 'pending' check (status in ('pending', 'acknowledged', 'complete')),
+--   created_at      timestamptz not null default now(),
+--   updated_at      timestamptz not null default now()
+-- );
+
+-- ============================================================
 -- SEED DATA: Default bin setup (rows A, B, C — 10 totes each)
 -- Uncomment to populate a starting warehouse layout
 -- ============================================================
