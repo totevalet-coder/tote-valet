@@ -3,26 +3,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { AlertTriangle, CreditCard, Package, ClipboardList, Loader2, CheckCircle2, Truck, CalendarDays } from 'lucide-react'
-
-interface PickupRequest {
-  toteId: string
-  toteName: string | null
-  customerName: string
-  customerAddress: string | null
-  customerId: string
-}
-
-interface ToteRequest {
-  id: string
-  type: 'empty_tote_delivery' | 'pickup'
-  quantity: number | null
-  toteIds: string[]
-  preferredDate: string | null
-  customerName: string
-  customerAddress: string | null
-  customerId: string
-}
+import {
+  AlertTriangle, CreditCard, Package, ClipboardList,
+  Loader2, CheckCircle2, Truck, Users, Warehouse,
+  Radio, Navigation, ArrowRight, Bell
+} from 'lucide-react'
 
 interface AdminStats {
   mrr: number
@@ -30,14 +15,12 @@ interface AdminStats {
   storedTotes: number
   emptyAtCustomer: number
   inTransit: number
+  readyToStow: number
   failedPayments: number
   driverErrors: number
-  unstowedPastCutoff: number
-  routesRunning: number
+  routesActive: number
   routesTotal: number
-  deliveriesScheduled: number
-  totesOutForDelivery: number
-  pickupRequests: number
+  pendingRequests: number
 }
 
 export default function AdminHomePage() {
@@ -47,10 +30,6 @@ export default function AdminHomePage() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [generatedId, setGeneratedId] = useState<string | null>(null)
-  const [pickupRequests, setPickupRequests] = useState<PickupRequest[]>([])
-  const [dismissedPickup, setDismissedPickup] = useState<Set<string>>(new Set())
-  const [toteRequests, setToteRequests] = useState<ToteRequest[]>([])
-  const [dismissedRequests, setDismissedRequests] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser()
@@ -60,68 +39,31 @@ export default function AdminHomePage() {
 
     const today = new Date().toISOString().split('T')[0]
 
-    const [totesRes, customersRes, routesRes, errorsRes, pickupRes, requestsRes] = await Promise.all([
-      supabase.from('totes').select('status, bin_location'),
+    const [totesRes, customersRes, routesRes, errorsRes, requestsRes, pickupFlagsRes] = await Promise.all([
+      supabase.from('totes').select('status'),
       supabase.from('customers').select('status, monthly_total, role'),
-      supabase.from('routes').select('status, stops').eq('date', today),
-      supabase.from('errors').select('id').eq('resolved', false),
-      supabase.from('totes').select('id, tote_name, customer_id, customers(name, address)').eq('pickup_requested', true),
-      supabase.from('tote_requests').select('id, type, quantity, tote_ids, preferred_date, customer_id, customers(name, address)').eq('status', 'pending'),
+      supabase.from('routes').select('status').eq('date', today),
+      supabase.from('errors').select('id', { count: 'exact', head: true }).eq('resolved', false),
+      supabase.from('tote_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('totes').select('id', { count: 'exact', head: true }).eq('pickup_requested', true),
     ])
 
     const totes = totesRes.data ?? []
     const customers = customersRes.data ?? []
     const routes = routesRes.data ?? []
 
-    const activeCustomers = customers.filter(c => c.role === 'customer' && c.status === 'active').length
-    const mrr = customers.filter(c => c.role === 'customer').reduce((s, c) => s + (c.monthly_total ?? 0), 0)
-    const failedPayments = customers.filter(c => c.status === 'failed_payment').length
-
-    const storedTotes = totes.filter(t => t.status === 'stored').length
-    const emptyAtCustomer = totes.filter(t => t.status === 'empty_at_customer').length
-    const inTransit = totes.filter(t => t.status === 'in_transit').length
-    const unstowedPastCutoff = totes.filter(t => t.status === 'ready_to_stow').length
-
-    const routesRunning = routes.filter(r => r.status === 'in_progress').length
-    const routesTotal = routes.length
-
-    let deliveriesScheduled = 0
-    let totesOutForDelivery = 0
-    for (const r of routes) {
-      const stops = (r.stops as { type: string; tote_ids: string[] }[]) ?? []
-      deliveriesScheduled += stops.filter(s => s.type === 'delivery').length
-      totesOutForDelivery += stops.filter(s => s.type === 'delivery').reduce((s, st) => s + st.tote_ids.length, 0)
-    }
-
-    // Build pickup request list
-    const requests: PickupRequest[] = (pickupRes.data ?? []).map((t: { id: string; tote_name: string | null; customer_id: string; customers: { name: string; address: string | null } | null }) => ({
-      toteId: t.id,
-      toteName: t.tote_name,
-      customerName: t.customers?.name ?? 'Unknown',
-      customerAddress: t.customers?.address ?? null,
-      customerId: t.customer_id,
-    }))
-    setPickupRequests(requests)
-
-    // Build tote_requests list
-    const tReqs: ToteRequest[] = (requestsRes.data ?? []).map((r: { id: string; type: string; quantity: number | null; tote_ids: string[]; preferred_date: string | null; customer_id: string; customers: { name: string; address: string | null } | null }) => ({
-      id: r.id,
-      type: r.type as 'empty_tote_delivery' | 'pickup',
-      quantity: r.quantity,
-      toteIds: r.tote_ids ?? [],
-      preferredDate: r.preferred_date,
-      customerName: r.customers?.name ?? 'Unknown',
-      customerAddress: r.customers?.address ?? null,
-      customerId: r.customer_id,
-    }))
-    setToteRequests(tReqs)
-
     setStats({
-      mrr, activeCustomers, storedTotes, emptyAtCustomer, inTransit, failedPayments,
-      driverErrors: errorsRes.data?.length ?? 0,
-      unstowedPastCutoff,
-      routesRunning, routesTotal, deliveriesScheduled, totesOutForDelivery,
-      pickupRequests: requests.length,
+      mrr: customers.filter(c => c.role === 'customer').reduce((s, c) => s + (c.monthly_total ?? 0), 0),
+      activeCustomers: customers.filter(c => c.role === 'customer' && c.status === 'active').length,
+      storedTotes: totes.filter(t => t.status === 'stored').length,
+      emptyAtCustomer: totes.filter(t => t.status === 'empty_at_customer').length,
+      inTransit: totes.filter(t => t.status === 'in_transit').length,
+      readyToStow: totes.filter(t => t.status === 'ready_to_stow').length,
+      failedPayments: customers.filter(c => c.status === 'failed_payment').length,
+      driverErrors: errorsRes.count ?? 0,
+      routesActive: routes.filter(r => r.status === 'in_progress' || r.status === 'returning').length,
+      routesTotal: routes.length,
+      pendingRequests: (requestsRes.count ?? 0) + (pickupFlagsRes.count ?? 0),
     })
     setLoading(false)
   }, [supabase, router])
@@ -132,11 +74,8 @@ export default function AdminHomePage() {
     setGenerating(true)
     setGeneratedId(null)
 
-    // Find all pending_pick totes
     const { data: totes } = await supabase
-      .from('totes')
-      .select('id, bin_location, customer_id')
-      .eq('status', 'pending_pick')
+      .from('totes').select('id, bin_location, customer_id').eq('status', 'pending_pick')
 
     if (!totes || totes.length === 0) {
       alert('No totes are currently pending pick.')
@@ -144,14 +83,11 @@ export default function AdminHomePage() {
       return
     }
 
-    // Get customer names
     const customerIds = [...new Set(totes.map(t => t.customer_id))]
-    const { data: customers } = await supabase
-      .from('customers').select('id, name').in('id', customerIds)
+    const { data: customers } = await supabase.from('customers').select('id, name').in('id', customerIds)
     const nameMap: Record<string, string> = {}
     ;(customers ?? []).forEach(c => { nameMap[c.id] = c.name })
 
-    // Group by bin
     const binMap: Record<string, { tote_id: string; customer_name: string; status: string }[]> = {}
     for (const tote of totes) {
       const bin = tote.bin_location ?? 'UNASSIGNED'
@@ -159,7 +95,6 @@ export default function AdminHomePage() {
       binMap[bin].push({ tote_id: tote.id, customer_name: nameMap[tote.customer_id] ?? '', status: 'pending' })
     }
 
-    // Build ID: PL-YYYY-DDD, suffix -B if collision
     const now = new Date()
     const year = now.getFullYear()
     const dayOfYear = Math.floor((now.getTime() - new Date(year, 0, 0).getTime()) / 86400000)
@@ -182,101 +117,151 @@ export default function AdminHomePage() {
       completed_at: null,
     })
 
-    if (!error) {
-      setGeneratedId(id)
-      load()
-    }
+    if (!error) { setGeneratedId(id); load() }
     setGenerating(false)
   }
 
   if (loading) {
     return (
       <div className="px-5 pt-6 space-y-4">
-        {[1, 2, 3, 4].map(i => <div key={i} className="h-20 bg-gray-200 rounded-2xl animate-pulse" />)}
+        {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-200 rounded-2xl animate-pulse" />)}
       </div>
     )
   }
 
   if (!stats) return null
 
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+
   return (
     <div className="px-5 pt-6 pb-6 space-y-5">
-      {/* Alert Banners */}
-      <div className="space-y-2">
-        {stats.driverErrors > 0 && (
-          <button onClick={() => router.push('/admin/errors')}
-            className="w-full flex items-center gap-3 bg-red-50 border border-red-300 rounded-2xl px-4 py-3 text-left hover:bg-red-100 transition-colors">
-            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-bold text-red-800">{stats.driverErrors} Driver Error{stats.driverErrors !== 1 ? 's' : ''} Need Review</p>
-              <p className="text-xs text-red-600">Tap to review and resolve</p>
-            </div>
-          </button>
-        )}
-        {stats.failedPayments > 0 && (
-          <button onClick={() => router.push('/admin/billing?tab=failed')}
-            className="w-full flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 text-left hover:bg-amber-100 transition-colors">
-            <CreditCard className="w-5 h-5 text-amber-600 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-bold text-amber-800">{stats.failedPayments} Failed Payment{stats.failedPayments !== 1 ? 's' : ''}</p>
-              <p className="text-xs text-amber-600">Tap to retry or suspend</p>
-            </div>
-          </button>
-        )}
-        {stats.pickupRequests > 0 && (
-          <div className="w-full flex items-center gap-3 bg-blue-50 border border-blue-300 rounded-2xl px-4 py-3 text-left">
-            <Truck className="w-5 h-5 text-blue-600 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-bold text-blue-800">{stats.pickupRequests} Pickup Request{stats.pickupRequests !== 1 ? 's' : ''} Pending</p>
-              <p className="text-xs text-blue-600">Customers are ready for their totes to be picked up</p>
-            </div>
-          </div>
-        )}
-        {toteRequests.filter(r => r.type === 'empty_tote_delivery' && !dismissedRequests.has(r.id)).length > 0 && (
-          <div className="w-full flex items-center gap-3 bg-purple-50 border border-purple-300 rounded-2xl px-4 py-3 text-left">
-            <Package className="w-5 h-5 text-purple-600 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-bold text-purple-800">
-                {toteRequests.filter(r => r.type === 'empty_tote_delivery').length} Empty Tote Deliver{toteRequests.filter(r => r.type === 'empty_tote_delivery').length !== 1 ? 'ies' : 'y'} Requested
-              </p>
-              <p className="text-xs text-purple-600">Customers need empty totes delivered</p>
-            </div>
-          </div>
-        )}
-        {stats.unstowedPastCutoff > 0 && (
-          <button onClick={() => router.push('/warehouse/scan-store?tab=unstowed')}
-            className="w-full flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 text-left hover:bg-amber-100 transition-colors">
-            <Package className="w-5 h-5 text-amber-600 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-bold text-amber-800">{stats.unstowedPastCutoff} Tote{stats.unstowedPastCutoff !== 1 ? 's' : ''} Unstowed</p>
-              <p className="text-xs text-amber-600">Tap to view warehouse</p>
-            </div>
-          </button>
-        )}
+
+      {/* Date greeting */}
+      <div>
+        <p className="text-xs text-gray-400 font-medium">{today}</p>
+        <h1 className="font-black text-2xl text-brand-navy">Overview</h1>
       </div>
 
-      {/* Business Metrics */}
+      {/* Alert banners — only show when action needed */}
+      {(stats.driverErrors > 0 || stats.failedPayments > 0 || stats.pendingRequests > 0 || stats.readyToStow > 0) && (
+        <div className="space-y-2">
+          {stats.driverErrors > 0 && (
+            <button onClick={() => router.push('/admin/errors')}
+              className="w-full flex items-center gap-3 bg-red-50 border border-red-300 rounded-2xl px-4 py-3 text-left hover:bg-red-100 transition-colors">
+              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+              <p className="flex-1 text-sm font-bold text-red-800">
+                {stats.driverErrors} driver error{stats.driverErrors !== 1 ? 's' : ''} need review
+              </p>
+              <ArrowRight className="w-4 h-4 text-red-400" />
+            </button>
+          )}
+          {stats.failedPayments > 0 && (
+            <button onClick={() => router.push('/admin/billing')}
+              className="w-full flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 text-left hover:bg-amber-100 transition-colors">
+              <CreditCard className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              <p className="flex-1 text-sm font-bold text-amber-800">
+                {stats.failedPayments} failed payment{stats.failedPayments !== 1 ? 's' : ''}
+              </p>
+              <ArrowRight className="w-4 h-4 text-amber-400" />
+            </button>
+          )}
+          {stats.pendingRequests > 0 && (
+            <button onClick={() => router.push('/admin/requests')}
+              className="w-full flex items-center gap-3 bg-blue-50 border border-blue-300 rounded-2xl px-4 py-3 text-left hover:bg-blue-100 transition-colors">
+              <Bell className="w-5 h-5 text-blue-600 flex-shrink-0" />
+              <p className="flex-1 text-sm font-bold text-blue-800">
+                {stats.pendingRequests} customer request{stats.pendingRequests !== 1 ? 's' : ''} pending
+              </p>
+              <ArrowRight className="w-4 h-4 text-blue-400" />
+            </button>
+          )}
+          {stats.readyToStow > 0 && (
+            <button onClick={() => router.push('/warehouse/scan-store?tab=unstowed')}
+              className="w-full flex items-center gap-3 bg-purple-50 border border-purple-300 rounded-2xl px-4 py-3 text-left hover:bg-purple-100 transition-colors">
+              <Package className="w-5 h-5 text-purple-600 flex-shrink-0" />
+              <p className="flex-1 text-sm font-bold text-purple-800">
+                {stats.readyToStow} tote{stats.readyToStow !== 1 ? 's' : ''} ready to stow
+              </p>
+              <ArrowRight className="w-4 h-4 text-purple-400" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Business metrics — all tappable */}
       <section>
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Business Overview</h2>
+        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Business</h2>
         <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: 'Monthly Revenue', value: `$${stats.mrr.toFixed(0)}`, emoji: '💰', color: 'text-green-600' },
-            { label: 'Active Customers', value: stats.activeCustomers, emoji: '👥', color: 'text-brand-navy' },
-            { label: 'Stored in Warehouse', value: stats.storedTotes, emoji: '🏢', color: 'text-brand-blue' },
-            { label: 'Empty at Customer', value: stats.emptyAtCustomer, emoji: '🗃️', color: 'text-gray-500' },
-            { label: 'In Transit Today', value: stats.inTransit, emoji: '🚐', color: 'text-yellow-600' },
-            { label: 'Failed Payments', value: stats.failedPayments, emoji: '⚠️', color: stats.failedPayments > 0 ? 'text-red-600' : 'text-gray-400' },
-          ].map(({ label, value, emoji, color }) => (
-            <div key={label} className="card text-center py-4">
-              <span className="text-2xl">{emoji}</span>
-              <p className={`font-black text-2xl mt-1 ${color}`}>{value}</p>
-              <p className="text-xs text-gray-500 mt-1 leading-tight">{label}</p>
-            </div>
-          ))}
+          <button onClick={() => router.push('/admin/billing')}
+            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
+            <span className="text-2xl">💰</span>
+            <p className="font-black text-2xl mt-1 text-green-600">${stats.mrr.toFixed(0)}</p>
+            <p className="text-xs text-gray-500 mt-1">Monthly Revenue</p>
+          </button>
+          <button onClick={() => router.push('/admin/customers')}
+            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
+            <Users className="w-7 h-7 text-brand-blue mx-auto" />
+            <p className="font-black text-2xl mt-1 text-brand-navy">{stats.activeCustomers}</p>
+            <p className="text-xs text-gray-500 mt-1">Active Customers</p>
+          </button>
         </div>
       </section>
 
-      {/* Quick Actions */}
+      {/* Tote status — all tappable */}
+      <section>
+        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Totes</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={() => router.push('/admin/totes?status=stored')}
+            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
+            <Warehouse className="w-7 h-7 text-brand-blue mx-auto" />
+            <p className="font-black text-2xl mt-1 text-brand-navy">{stats.storedTotes}</p>
+            <p className="text-xs text-gray-500 mt-1">Stored in Warehouse</p>
+          </button>
+          <button onClick={() => router.push('/admin/totes?status=empty_at_customer')}
+            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
+            <Package className="w-7 h-7 text-gray-400 mx-auto" />
+            <p className="font-black text-2xl mt-1 text-gray-600">{stats.emptyAtCustomer}</p>
+            <p className="text-xs text-gray-500 mt-1">At Customer</p>
+          </button>
+          <button onClick={() => router.push('/admin/totes?status=in_transit')}
+            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
+            <Truck className="w-7 h-7 text-yellow-500 mx-auto" />
+            <p className="font-black text-2xl mt-1 text-yellow-600">{stats.inTransit}</p>
+            <p className="text-xs text-gray-500 mt-1">In Transit</p>
+          </button>
+          <button onClick={() => router.push('/admin/totes')}
+            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
+            <Package className="w-7 h-7 text-brand-navy/40 mx-auto" />
+            <p className="font-black text-2xl mt-1 text-brand-navy">
+              {stats.storedTotes + stats.emptyAtCustomer + stats.inTransit + stats.readyToStow}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">Total Totes</p>
+          </button>
+        </div>
+      </section>
+
+      {/* Today's operations — all tappable */}
+      <section>
+        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Today</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={() => router.push('/admin/monitor')}
+            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
+            <Radio className="w-7 h-7 text-brand-blue mx-auto" />
+            <p className="font-black text-2xl mt-1 text-brand-navy">
+              {stats.routesActive}<span className="text-gray-400 text-lg font-semibold">/{stats.routesTotal}</span>
+            </p>
+            <p className="text-xs text-gray-500 mt-1">Routes Active</p>
+          </button>
+          <button onClick={() => router.push('/admin/routes/new')}
+            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
+            <Navigation className="w-7 h-7 text-brand-navy/50 mx-auto" />
+            <p className="font-black text-2xl mt-1 text-brand-navy">{stats.routesTotal}</p>
+            <p className="text-xs text-gray-500 mt-1">Routes Today</p>
+          </button>
+        </div>
+      </section>
+
+      {/* Quick actions */}
       <section>
         <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Quick Actions</h2>
         <div className="space-y-2">
@@ -287,7 +272,7 @@ export default function AdminHomePage() {
                 <p className="text-sm font-bold text-green-800">Pick List {generatedId} created</p>
                 <p className="text-xs text-green-600">Warehouse can now start picking</p>
               </div>
-              <button onClick={() => setGeneratedId(null)} className="text-green-400 hover:text-green-600 text-lg leading-none">×</button>
+              <button onClick={() => setGeneratedId(null)} className="text-green-400 text-lg leading-none">×</button>
             </div>
           )}
           <button
@@ -298,105 +283,15 @@ export default function AdminHomePage() {
             <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center flex-shrink-0">
               {generating ? <Loader2 className="w-5 h-5 text-brand-blue animate-spin" /> : <ClipboardList className="w-5 h-5 text-brand-blue" />}
             </div>
-            <div className="text-left">
+            <div className="text-left flex-1">
               <p className="font-bold text-sm">{generating ? 'Generating…' : 'Generate Pick List'}</p>
               <p className="text-xs text-gray-400">Pulls all pending-pick totes from warehouse</p>
             </div>
+            <ArrowRight className="w-4 h-4 text-gray-300" />
           </button>
         </div>
       </section>
 
-      {/* Tote Requests (empty deliveries + scheduled pickups) */}
-      {toteRequests.filter(r => !dismissedRequests.has(r.id)).length > 0 && (
-        <section>
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Pending Requests</h2>
-          <div className="space-y-2">
-            {toteRequests.filter(r => !dismissedRequests.has(r.id)).map(req => (
-              <div key={req.id} className="card flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${req.type === 'empty_tote_delivery' ? 'bg-purple-100' : 'bg-blue-100'}`}>
-                  {req.type === 'empty_tote_delivery' ? (
-                    <Package className="w-5 h-5 text-purple-600" />
-                  ) : (
-                    <Truck className="w-5 h-5 text-blue-600" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-brand-navy text-sm">{req.customerName}</p>
-                  <p className="text-xs text-gray-500">
-                    {req.type === 'empty_tote_delivery'
-                      ? `Deliver ${req.quantity} empty tote${req.quantity !== 1 ? 's' : ''}`
-                      : `Pick up ${req.toteIds.length} tote${req.toteIds.length !== 1 ? 's' : ''}`
-                    }
-                  </p>
-                  {req.preferredDate && (
-                    <p className="text-xs text-brand-blue font-semibold mt-0.5">
-                      📅 {new Date(req.preferredDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </p>
-                  )}
-                  {req.customerAddress && (
-                    <p className="text-xs text-gray-400 truncate">{req.customerAddress}</p>
-                  )}
-                </div>
-                <button onClick={() => router.push(`/admin/customers/${req.customerId}`)} className="text-xs text-brand-blue font-semibold flex-shrink-0">View</button>
-                <button onClick={() => setDismissedRequests(prev => new Set([...prev, req.id]))} className="text-gray-300 hover:text-gray-500 flex-shrink-0 text-lg leading-none">×</button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Pickup Requests (legacy — totes with pickup_requested flag) */}
-      {pickupRequests.filter(r => !dismissedPickup.has(r.toteId)).length > 0 && (
-        <section>
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Pickup Requests</h2>
-          <div className="space-y-2">
-            {pickupRequests.filter(r => !dismissedPickup.has(r.toteId)).map(req => (
-              <div key={req.toteId} className="card flex items-start gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <Truck className="w-5 h-5 text-blue-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-brand-navy text-sm">{req.customerName}</p>
-                  <p className="text-xs text-gray-500">{req.toteName ?? req.toteId}</p>
-                  {req.customerAddress && (
-                    <p className="text-xs text-gray-400 mt-0.5 truncate">{req.customerAddress}</p>
-                  )}
-                </div>
-                <button
-                  onClick={() => router.push(`/admin/customers/${req.customerId}`)}
-                  className="text-xs text-brand-blue font-semibold flex-shrink-0"
-                >
-                  View
-                </button>
-                <button
-                  onClick={() => setDismissedPickup(prev => new Set([...prev, req.toteId]))}
-                  className="text-gray-300 hover:text-gray-500 flex-shrink-0 text-lg leading-none"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Today's Operations */}
-      <section>
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Today&apos;s Operations</h2>
-        <div className="card space-y-3">
-          {[
-            { label: 'Routes Running', value: `${stats.routesRunning} of ${stats.routesTotal}` },
-            { label: 'Deliveries Scheduled', value: `${stats.deliveriesScheduled} stops` },
-            { label: 'Totes Out for Delivery', value: stats.totesOutForDelivery },
-            { label: 'Driver Errors (Unresolved)', value: stats.driverErrors },
-          ].map(({ label, value }) => (
-            <div key={label} className="flex items-center justify-between text-sm">
-              <span className="text-gray-500">{label}</span>
-              <span className="font-bold text-brand-navy">{value}</span>
-            </div>
-          ))}
-        </div>
-      </section>
     </div>
   )
 }

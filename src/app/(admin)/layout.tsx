@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Users, Navigation, Radio, AlertTriangle,
   CreditCard, Settings, UserPlus, ChevronRight, Package,
-  LogOut, ShieldCheck, Eye, X, MoreHorizontal
+  LogOut, ShieldCheck, Eye, X, MoreHorizontal, Bell
 } from 'lucide-react'
 import { useRoleGuard } from '@/lib/useRoleGuard'
 import { setViewAsRole, type ViewAsRole } from '@/lib/adminViewAs'
@@ -30,6 +30,7 @@ const moreGroups = [
       { href: '/admin/routes',    label: 'Routes',           icon: Navigation,      desc: 'Create & view all routes' },
       { href: '/admin/totes',     label: 'Tote Inventory',   icon: Package,         desc: 'All totes with status filters' },
       { href: '/admin/errors',    label: 'Driver Errors',    icon: AlertTriangle,   desc: 'Review & resolve flags' },
+      { href: '/admin/requests',  label: 'Customer Requests', icon: Bell,            desc: 'Pickup flags & scheduled requests' },
     ],
   },
   {
