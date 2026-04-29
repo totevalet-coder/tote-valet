@@ -1,14 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import { Suspense } from 'react'
 
 function ResetPasswordForm() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const supabase = createClient()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -19,25 +18,27 @@ function ResetPasswordForm() {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    const code = searchParams.get('code')
+    // Implicit flow: token arrives as URL hash #access_token=...&type=recovery
+    const hash = window.location.hash.substring(1)
+    const params = new URLSearchParams(hash)
+    const accessToken = params.get('access_token')
+    const refreshToken = params.get('refresh_token')
+    const type = params.get('type')
 
-    if (code) {
-      // PKCE flow: exchange the code directly and set ready on success
-      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) {
-          setError('Reset link is invalid or expired. Please request a new one.')
-        } else {
-          setReady(true)
-        }
-      })
+    if (type === 'recovery' && accessToken && refreshToken) {
+      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+        .then(({ error }) => {
+          if (error) setError('Reset link is invalid or expired. Please request a new one.')
+          else setReady(true)
+        })
     } else {
-      // Legacy hash flow: Supabase client fires PASSWORD_RECOVERY from the URL hash
+      // Fallback: listen for event (handles edge cases)
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
         if (event === 'PASSWORD_RECOVERY') setReady(true)
       })
       return () => subscription.unsubscribe()
     }
-  }, [supabase, searchParams])
+  }, [supabase])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
