@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react'
+import { Suspense } from 'react'
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -16,13 +18,22 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
 
-  // Supabase fires an auth state change when the reset token is parsed from the URL hash
   useEffect(() => {
+    // Listen for PASSWORD_RECOVERY event (fires after code exchange or hash token parse)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true)
     })
+
+    // PKCE flow: Supabase sends ?code= in the URL — exchange it to trigger the event
+    const code = searchParams.get('code')
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) setError('Reset link is invalid or expired. Please request a new one.')
+      })
+    }
+
     return () => subscription.unsubscribe()
-  }, [supabase])
+  }, [supabase, searchParams])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -36,7 +47,15 @@ export default function ResetPasswordPage() {
       setError(err.message)
     } else {
       setDone(true)
-      setTimeout(() => router.push('/dashboard'), 2500)
+      // Route to correct portal based on role
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: customer } = await supabase.from('customers').select('role').eq('auth_id', user.id).single()
+        const dest = { admin: '/admin', driver: '/driver', warehouse: '/warehouse', sorter: '/sorter' }[customer?.role ?? ''] ?? '/dashboard'
+        setTimeout(() => router.push(dest), 2000)
+      } else {
+        setTimeout(() => router.push('/dashboard'), 2000)
+      }
     }
     setLoading(false)
   }
@@ -117,5 +136,17 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-brand-navy">
+        <Loader2 className="w-8 h-8 text-white animate-spin" />
+      </div>
+    }>
+      <ResetPasswordForm />
+    </Suspense>
   )
 }
