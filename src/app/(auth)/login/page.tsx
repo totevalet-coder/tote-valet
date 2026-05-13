@@ -37,13 +37,33 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError(error.message)
       setLoading(false)
-    } else {
-      router.push('/dashboard')
+      return
     }
+
+    const user = data.user
+    if (!user) {
+      router.push('/dashboard')
+      return
+    }
+
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('role')
+      .eq('auth_id', user.id)
+      .single()
+
+    const roleRoutes: Record<string, string> = {
+      customer: '/dashboard',
+      driver: '/driver',
+      warehouse: '/warehouse',
+      sorter: '/sorter',
+      admin: '/admin',
+    }
+    router.push(roleRoutes[customer?.role ?? ''] ?? '/dashboard')
   }
 
   return (
