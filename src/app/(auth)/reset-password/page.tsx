@@ -21,16 +21,19 @@ function ResetPasswordForm() {
   useEffect(() => {
     let cancelled = false
 
-    // Subscribe first so we catch PASSWORD_RECOVERY whether it fires during setSession
-    // or was already fired by the client's detectSessionInUrl auto-processing
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY' && session && !cancelled) {
-        setReady(true)
-      }
-    })
-
     async function init() {
-      // Try the hash first — present when the client hasn't consumed it yet
+      // --- Path 1: PKCE flow — code arrives as ?code= query param ---
+      const searchParams = new URLSearchParams(window.location.search)
+      const code = searchParams.get('code')
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (cancelled) return
+        if (error) { setError('Reset link is invalid or expired. Please request a new one.'); return }
+        setReady(true)
+        return
+      }
+
+      // --- Path 2: Implicit flow — tokens arrive as #access_token= hash ---
       const hash = window.location.hash.substring(1)
       const params = new URLSearchParams(hash)
       const accessToken = params.get('access_token')
@@ -40,29 +43,36 @@ function ResetPasswordForm() {
       if (type === 'recovery' && accessToken && refreshToken) {
         const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
         if (cancelled) return
-        if (error) setError('Reset link is invalid or expired. Please request a new one.')
-        // setReady is handled by the PASSWORD_RECOVERY event above
+        if (error) { setError('Reset link is invalid or expired. Please request a new one.'); return }
+        setReady(true)
         return
       }
 
-      // Hash was already consumed by detectSessionInUrl — check if the session
-      // was already established before our subscription was attached
-      const { data: { session } } = await supabase.auth.getSession()
-      if (cancelled) return
-      if (session) { setReady(true); return }
+      // --- Path 3: Hash/code was already consumed by the Supabase client on init ---
+      // onAuthStateChange fires INITIAL_SESSION immediately with whatever session exists
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (cancelled) return
+        if (session && (event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
+          setReady(true)
+          subscription.unsubscribe()
+        }
+      })
 
-      // Nothing yet — give the event system a few seconds before showing error
+      // Belt-and-suspenders: also check existing session directly
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) { subscription.unsubscribe(); return }
+      if (session) { setReady(true); subscription.unsubscribe(); return }
+
+      // Nothing found — show error after a short wait
       setTimeout(() => {
         if (!cancelled) setError('Reset link is invalid or expired. Please request a new one.')
+        subscription.unsubscribe()
       }, 4000)
     }
 
     init()
 
-    return () => {
-      cancelled = true
-      subscription.unsubscribe()
-    }
+    return () => { cancelled = true }
   }, [supabase])
 
   async function handleSubmit(e: React.FormEvent) {
