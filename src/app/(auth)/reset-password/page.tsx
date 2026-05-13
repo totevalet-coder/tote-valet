@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react'
@@ -8,7 +8,8 @@ import { Suspense } from 'react'
 
 function ResetPasswordForm() {
   const router = useRouter()
-  const supabase = createClient()
+  // Stable ref so the client isn't recreated on every render
+  const supabase = useRef(createClient()).current
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -18,25 +19,49 @@ function ResetPasswordForm() {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    // Implicit flow: token arrives as URL hash #access_token=...&type=recovery
-    const hash = window.location.hash.substring(1)
-    const params = new URLSearchParams(hash)
-    const accessToken = params.get('access_token')
-    const refreshToken = params.get('refresh_token')
-    const type = params.get('type')
+    let cancelled = false
 
-    if (type === 'recovery' && accessToken && refreshToken) {
-      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
-        .then(({ error }) => {
-          if (error) setError('Reset link is invalid or expired. Please request a new one.')
-          else setReady(true)
-        })
-    } else {
-      // Fallback: listen for event (handles edge cases)
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-        if (event === 'PASSWORD_RECOVERY') setReady(true)
-      })
-      return () => subscription.unsubscribe()
+    // Subscribe first so we catch PASSWORD_RECOVERY whether it fires during setSession
+    // or was already fired by the client's detectSessionInUrl auto-processing
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' && session && !cancelled) {
+        setReady(true)
+      }
+    })
+
+    async function init() {
+      // Try the hash first — present when the client hasn't consumed it yet
+      const hash = window.location.hash.substring(1)
+      const params = new URLSearchParams(hash)
+      const accessToken = params.get('access_token')
+      const refreshToken = params.get('refresh_token')
+      const type = params.get('type')
+
+      if (type === 'recovery' && accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+        if (cancelled) return
+        if (error) setError('Reset link is invalid or expired. Please request a new one.')
+        // setReady is handled by the PASSWORD_RECOVERY event above
+        return
+      }
+
+      // Hash was already consumed by detectSessionInUrl — check if the session
+      // was already established before our subscription was attached
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) return
+      if (session) { setReady(true); return }
+
+      // Nothing yet — give the event system a few seconds before showing error
+      setTimeout(() => {
+        if (!cancelled) setError('Reset link is invalid or expired. Please request a new one.')
+      }, 4000)
+    }
+
+    init()
+
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
     }
   }, [supabase])
 
