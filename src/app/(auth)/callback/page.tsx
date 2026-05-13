@@ -10,47 +10,34 @@ export default function CallbackPage() {
   const supabase = useRef(createClient()).current
 
   useEffect(() => {
-    async function routeUser(userId: string) {
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('id, role')
-        .eq('auth_id', userId)
-        .single()
+    async function handleCallback() {
+      // Explicitly extract tokens from the URL hash (implicit OAuth flow)
+      const hash = window.location.hash.substring(1)
+      const hashParams = new URLSearchParams(hash)
+      const access_token = hashParams.get('access_token')
+      const refresh_token = hashParams.get('refresh_token')
 
-      if (!customer) {
-        router.replace('/register?oauth=true')
-        return
+      if (access_token && refresh_token) {
+        // setSession explicitly so we use the new OAuth tokens, not any stale cookie session
+        const { error } = await supabase.auth.setSession({ access_token, refresh_token })
+        if (error) {
+          router.replace('/login?error=auth_failed')
+          return
+        }
+      } else {
+        // No hash tokens — verify there's at least an existing session
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          router.replace('/login?error=auth_failed')
+          return
+        }
       }
 
-      const roleRoutes: Record<string, string> = {
-        customer: '/dashboard',
-        driver: '/driver',
-        warehouse: '/warehouse',
-        sorter: '/sorter',
-        admin: '/admin',
-      }
-      // Hard navigation so the session cookies are sent with the next request
-      window.location.href = roleRoutes[customer.role] ?? '/dashboard'
+      // Let the root page handle role routing (and self-heal auth_id if needed)
+      window.location.href = '/'
     }
 
-    // Listen for the SIGNED_IN event — fires once Supabase has processed
-    // the URL hash token from the OAuth redirect
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        subscription.unsubscribe()
-        routeUser(session.user.id)
-      }
-    })
-
-    // Fallback: session may already exist if user was previously signed in
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        subscription.unsubscribe()
-        routeUser(session.user.id)
-      }
-    })
-
-    return () => subscription.unsubscribe()
+    handleCallback()
   }, [supabase, router])
 
   return (

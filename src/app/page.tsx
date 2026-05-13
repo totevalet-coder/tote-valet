@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 export default async function RootPage() {
   const supabase = await createClient()
@@ -9,12 +9,30 @@ export default async function RootPage() {
     redirect('/landing')
   }
 
-  // Look up role and redirect to appropriate dashboard
-  const { data: customer } = await supabase
+  // Fast path: look up by auth_id
+  let { data: customer } = await supabase
     .from('customers')
     .select('role')
     .eq('auth_id', user.id)
     .single()
+
+  // Fallback: if auth_id doesn't match any row, find by email and self-heal
+  if (!customer && user.email) {
+    const adminClient = await createAdminClient()
+    const { data: byEmail } = await adminClient
+      .from('customers')
+      .select('id, role')
+      .eq('email', user.email)
+      .single()
+
+    if (byEmail) {
+      await adminClient
+        .from('customers')
+        .update({ auth_id: user.id })
+        .eq('id', byEmail.id)
+      customer = byEmail
+    }
+  }
 
   if (!customer) {
     redirect('/login')
