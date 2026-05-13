@@ -35,16 +35,34 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError(error.message)
       setLoading(false)
       return
     }
+    if (!data.session) {
+      setError('Sign-in failed — please try again.')
+      setLoading(false)
+      return
+    }
 
-    // Hard navigation so the server-side root page reads the session cookies
-    // and redirects to the correct role dashboard
-    window.location.href = '/'
+    // Look up role using the session we just received (client-side, no cookie dependency)
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('role')
+      .eq('auth_id', data.user.id)
+      .single()
+
+    const roleRoutes: Record<string, string> = {
+      customer: '/dashboard',
+      driver: '/driver',
+      warehouse: '/warehouse',
+      sorter: '/sorter',
+      admin: '/admin',
+    }
+    // Hard navigation ensures the session cookies are sent with the next request
+    window.location.href = roleRoutes[customer?.role ?? ''] ?? '/dashboard'
   }
 
   return (
