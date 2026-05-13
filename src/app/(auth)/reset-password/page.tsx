@@ -19,68 +19,12 @@ function ResetPasswordForm() {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
-
-    async function init() {
-      // --- Check for error params first (e.g. otp_expired, access_denied) ---
-      const searchParams = new URLSearchParams(window.location.search)
-      const urlError = searchParams.get('error') || new URLSearchParams(window.location.hash.substring(1)).get('error')
-      if (urlError) {
-        const desc = searchParams.get('error_description') || 'Reset link is invalid or has expired.'
-        setError(desc.replace(/\+/g, ' '))
-        return
-      }
-
-      // --- Path 1: PKCE flow — code arrives as ?code= query param ---
-      const code = searchParams.get('code')
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (cancelled) return
-        if (error) { setError('Reset link is invalid or expired. Please request a new one.'); return }
-        setReady(true)
-        return
-      }
-
-      // --- Path 2: Implicit flow — tokens arrive as #access_token= hash ---
-      const hash = window.location.hash.substring(1)
-      const params = new URLSearchParams(hash)
-      const accessToken = params.get('access_token')
-      const refreshToken = params.get('refresh_token')
-      const type = params.get('type')
-
-      if (type === 'recovery' && accessToken && refreshToken) {
-        const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
-        if (cancelled) return
-        if (error) { setError('Reset link is invalid or expired. Please request a new one.'); return }
-        setReady(true)
-        return
-      }
-
-      // --- Path 3: Hash/code was already consumed by the Supabase client on init ---
-      // onAuthStateChange fires INITIAL_SESSION immediately with whatever session exists
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (cancelled) return
-        if (session && (event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
-          setReady(true)
-          subscription.unsubscribe()
-        }
-      })
-
-      // Belt-and-suspenders: also check existing session directly
-      const { data: { session } } = await supabase.auth.getSession()
-      if (cancelled) { subscription.unsubscribe(); return }
-      if (session) { setReady(true); subscription.unsubscribe(); return }
-
-      // Nothing found — show error after a short wait
-      setTimeout(() => {
-        if (!cancelled) setError('Reset link is invalid or expired. Please request a new one.')
-        subscription.unsubscribe()
-      }, 4000)
-    }
-
-    init()
-
-    return () => { cancelled = true }
+    // Session already established by /auth/confirm before redirecting here.
+    // Just verify it exists; if not, the user arrived without a valid reset flow.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setReady(true)
+      else setError('Reset link is invalid or expired. Please request a new one.')
+    })
   }, [supabase])
 
   async function handleSubmit(e: React.FormEvent) {
