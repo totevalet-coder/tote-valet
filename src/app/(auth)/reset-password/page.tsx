@@ -22,8 +22,16 @@ function ResetPasswordForm() {
     let cancelled = false
 
     async function init() {
-      // --- Path 1: PKCE flow — code arrives as ?code= query param ---
+      // --- Check for error params first (e.g. otp_expired, access_denied) ---
       const searchParams = new URLSearchParams(window.location.search)
+      const urlError = searchParams.get('error') || new URLSearchParams(window.location.hash.substring(1)).get('error')
+      if (urlError) {
+        const desc = searchParams.get('error_description') || 'Reset link is invalid or has expired.'
+        setError(desc.replace(/\+/g, ' '))
+        return
+      }
+
+      // --- Path 1: PKCE flow — code arrives as ?code= query param ---
       const code = searchParams.get('code')
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code)
