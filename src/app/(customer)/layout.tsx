@@ -115,18 +115,17 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
       if (!data.user) return
-      const name =
-        data.user.user_metadata?.full_name ||
-        data.user.email?.split('@')[0] ||
-        'Customer'
-      setUserName(name)
 
       const { data: customer } = await supabase
         .from('customers')
-        .select('id')
+        .select('id, name')
         .eq('auth_id', data.user.id)
         .single()
-      if (customer) loadUnread(customer.id)
+
+      if (customer) {
+        setUserName(customer.name || data.user.email?.split('@')[0] || 'Customer')
+        loadUnread(customer.id)
+      }
     })
   }, [supabase, loadUnread])
 
