@@ -53,22 +53,8 @@ export default function LoginPage() {
       return
     }
 
-    // Look up role using the session we just received (client-side, no cookie dependency)
-    const { data: customer } = await supabase
-      .from('customers')
-      .select('role')
-      .eq('auth_id', data.user.id)
-      .single()
-
-    const roleRoutes: Record<string, string> = {
-      customer: '/dashboard',
-      driver: '/driver',
-      warehouse: '/warehouse',
-      sorter: '/sorter',
-      admin: '/admin',
-    }
-    // Hard navigation ensures the session cookies are sent with the next request
-    window.location.href = roleRoutes[customer?.role ?? ''] ?? '/dashboard'
+    // Hard navigation to root — server page resolves role via admin client and redirects
+    window.location.href = '/'
   }
 
   return (

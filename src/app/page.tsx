@@ -9,16 +9,18 @@ export default async function RootPage() {
     redirect('/landing')
   }
 
+  // Use admin client for all DB lookups — bypasses RLS entirely
+  const adminClient = createAdminClient()
+
   // Fast path: look up by auth_id
-  let { data: customer } = await supabase
+  let { data: customer } = await adminClient
     .from('customers')
-    .select('role')
+    .select('id, role')
     .eq('auth_id', user.id)
     .single()
 
   // Fallback: if auth_id doesn't match any row, find by email and self-heal
   if (!customer && user.email) {
-    const adminClient = await createAdminClient()
     const { data: byEmail } = await adminClient
       .from('customers')
       .select('id, role')

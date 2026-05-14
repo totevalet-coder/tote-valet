@@ -20,8 +20,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=no_user`)
   }
 
+  // Use admin client for all DB lookups — bypasses RLS entirely
+  const adminClient = createAdminClient()
+
   // Look up customer by auth_id (fast path)
-  let { data: customer } = await supabase
+  let { data: customer } = await adminClient
     .from('customers')
     .select('id, role')
     .eq('auth_id', user.id)
@@ -29,7 +32,6 @@ export async function GET(request: NextRequest) {
 
   // Fallback: match by email and self-heal auth_id
   if (!customer && user.email) {
-    const adminClient = await createAdminClient()
     const { data: byEmail } = await adminClient
       .from('customers')
       .select('id, role')
