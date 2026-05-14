@@ -1,11 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, Package, CheckCircle2, Loader2 } from 'lucide-react'
+import { ChevronLeft, Package, CheckCircle2, Loader2, Clock } from 'lucide-react'
 
 const QUICK_AMOUNTS = [1, 2, 3, 4]
+
+interface PendingDelivery {
+  id: string
+  quantity: number
+  preferred_date: string
+}
 
 export default function RequestTotesPage() {
   const router = useRouter()
@@ -17,6 +23,26 @@ export default function RequestTotesPage() {
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>([])
+
+  useEffect(() => {
+    async function loadPending() {
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData.user) return
+      const { data: customer } = await supabase
+        .from('customers').select('id').eq('auth_id', userData.user.id).single()
+      if (!customer) return
+      const { data } = await supabase
+        .from('tote_requests')
+        .select('id, quantity, preferred_date')
+        .eq('customer_id', customer.id)
+        .eq('type', 'empty_tote_delivery')
+        .eq('status', 'pending')
+        .order('preferred_date', { ascending: true })
+      setPendingDeliveries(data ?? [])
+    }
+    loadPending()
+  }, [supabase])
 
   const selectedQty = quantity ?? (customQty ? parseInt(customQty) : null)
 
@@ -43,6 +69,16 @@ export default function RequestTotesPage() {
         status: 'pending',
       })
       if (e) throw e
+
+      // Refresh pending list then show success
+      const { data: refreshed } = await supabase
+        .from('tote_requests')
+        .select('id, quantity, preferred_date')
+        .eq('customer_id', customer.id)
+        .eq('type', 'empty_tote_delivery')
+        .eq('status', 'pending')
+        .order('preferred_date', { ascending: true })
+      setPendingDeliveries(refreshed ?? [])
 
       setDone(true)
     } catch (err: unknown) {
@@ -90,6 +126,29 @@ export default function RequestTotesPage() {
         <h1 className="text-2xl font-black text-brand-navy">Request Empty Totes</h1>
         <p className="text-gray-500 text-sm mt-1">We&apos;ll deliver empty totes to your door at no charge.</p>
       </div>
+
+      {/* Pending deliveries */}
+      {pendingDeliveries.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-4 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <Clock className="w-4 h-4 text-amber-600" />
+            <p className="text-sm font-bold text-amber-800">Pending Deliveries</p>
+          </div>
+          {pendingDeliveries.map(d => {
+            const dateStr = new Date(d.preferred_date + 'T12:00:00').toLocaleDateString('en-US', {
+              weekday: 'short', month: 'short', day: 'numeric',
+            })
+            return (
+              <div key={d.id} className="flex items-center justify-between text-sm">
+                <span className="text-amber-900 font-medium">
+                  {d.quantity} empty tote{d.quantity !== 1 ? 's' : ''}
+                </span>
+                <span className="text-amber-700">arriving {dateStr}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>

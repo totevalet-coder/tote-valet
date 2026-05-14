@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import StatBox from '@/components/ui/StatBox'
-import { PlusCircle, PackageSearch, Package } from 'lucide-react'
+import { PlusCircle, PackageSearch, Package, Truck } from 'lucide-react'
 import type { Tote } from '@/types/database'
 
 interface ToteStats {
@@ -12,6 +12,12 @@ interface ToteStats {
   inTransit: number
   fullAtHome: number
   emptyAtHome: number
+}
+
+interface PendingDelivery {
+  id: string
+  quantity: number
+  preferred_date: string
 }
 
 export default function DashboardPage() {
@@ -24,6 +30,7 @@ export default function DashboardPage() {
     emptyAtHome: 0,
   })
   const [loading, setLoading] = useState(true)
+  const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>([])
 
   const loadStats = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser()
@@ -43,11 +50,20 @@ export default function DashboardPage() {
       return
     }
 
-    const { data: totes } = await supabase
-      .from('totes')
-      .select('status, items')
-      .eq('customer_id', customer.id)
+    const [totesRes, deliveriesRes] = await Promise.all([
+      supabase.from('totes').select('status, items').eq('customer_id', customer.id),
+      supabase
+        .from('tote_requests')
+        .select('id, quantity, preferred_date')
+        .eq('customer_id', customer.id)
+        .eq('type', 'empty_tote_delivery')
+        .eq('status', 'pending')
+        .order('preferred_date', { ascending: true }),
+    ])
 
+    setPendingDeliveries(deliveriesRes.data ?? [])
+
+    const totes = totesRes.data
     if (totes) {
       const storedInWarehouse = totes.filter(
         t => t.status === 'stored' || t.status === 'ready_to_stow' || t.status === 'pending_pick' || t.status === 'picked'
@@ -134,6 +150,29 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
+
+      {/* Pending empty tote deliveries */}
+      {pendingDeliveries.length > 0 && (() => {
+        const soonest = pendingDeliveries[0]
+        const dateStr = new Date(soonest.preferred_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const extras = pendingDeliveries.length - 1
+        return (
+          <button
+            onClick={() => router.push('/request-totes')}
+            className="w-full flex items-center gap-3 bg-brand-blue/5 border border-brand-blue/30 rounded-2xl px-4 py-3 text-left hover:bg-brand-blue/10 transition-colors"
+          >
+            <Truck className="w-5 h-5 text-brand-blue flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-brand-navy">
+                {soonest.quantity} empty tote{soonest.quantity !== 1 ? 's' : ''} arriving {dateStr}
+              </p>
+              {extras > 0 && (
+                <p className="text-xs text-brand-blue mt-0.5">+{extras} more deliver{extras === 1 ? 'y' : 'ies'} pending</p>
+              )}
+            </div>
+          </button>
+        )
+      })()}
 
       {/* Primary action buttons */}
       <section className="space-y-3">
