@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MapPin } from 'lucide-react'
 
 interface AddressInputProps {
@@ -11,24 +11,26 @@ interface AddressInputProps {
   disabled?: boolean
 }
 
-// Tracks whether the script has been injected
-let scriptLoaded = false
-let scriptLoading = false
-const onLoadCallbacks: (() => void)[] = []
+type MapsState = 'loading' | 'ready' | 'failed'
 
-function loadGoogleMapsScript(apiKey: string, onLoad: () => void) {
-  if (scriptLoaded) { onLoad(); return }
-  onLoadCallbacks.push(onLoad)
-  if (scriptLoading) return
-  scriptLoading = true
+let mapsState: MapsState = 'loading'
+const mapsCallbacks: Array<(state: MapsState) => void> = []
+
+function loadGoogleMapsScript(apiKey: string) {
+  if (mapsState !== 'loading') return
 
   const script = document.createElement('script')
   script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
   script.async = true
   script.onload = () => {
-    scriptLoaded = true
-    onLoadCallbacks.forEach(cb => cb())
-    onLoadCallbacks.length = 0
+    mapsState = 'ready'
+    mapsCallbacks.forEach(cb => cb('ready'))
+    mapsCallbacks.length = 0
+  }
+  script.onerror = () => {
+    mapsState = 'failed'
+    mapsCallbacks.forEach(cb => cb('failed'))
+    mapsCallbacks.length = 0
   }
   document.head.appendChild(script)
 }
@@ -42,39 +44,52 @@ export default function AddressInput({
 }: AddressInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null)
+  const [mapsReady, setMapsReady] = useState<MapsState>(mapsState)
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 
-  const initAutocomplete = useCallback(() => {
-    if (!inputRef.current || !window.google?.maps?.places) return
-    if (autocompleteRef.current) return // already initialized
-
-    autocompleteRef.current = new window.google.maps.places.Autocomplete(inputRef.current, {
-      componentRestrictions: { country: 'us' },
-      fields: ['formatted_address'],
-      types: ['address'],
-    })
-
-    autocompleteRef.current.addListener('place_changed', () => {
-      const place = autocompleteRef.current?.getPlace()
-      if (place?.formatted_address) {
-        onChange(place.formatted_address)
-      }
-    })
-  }, [onChange])
-
   useEffect(() => {
-    if (!apiKey) return
-    loadGoogleMapsScript(apiKey, initAutocomplete)
+    if (!apiKey) { setMapsReady('failed'); return }
+
+    if (mapsState === 'ready') { setMapsReady('ready'); return }
+    if (mapsState === 'failed') { setMapsReady('failed'); return }
+
+    // Still loading — register callback and kick off load
+    mapsCallbacks.push(setMapsReady)
+    loadGoogleMapsScript(apiKey)
+  }, [apiKey])
+
+  // Init autocomplete once Maps is ready
+  useEffect(() => {
+    if (mapsReady !== 'ready' || !inputRef.current || autocompleteRef.current) return
+
+    try {
+      const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
+        componentRestrictions: { country: 'us' },
+        fields: ['formatted_address'],
+        types: ['address'],
+      })
+      autocompleteRef.current = ac
+
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace()
+        if (place?.formatted_address) {
+          onChange(place.formatted_address)
+        }
+      })
+    } catch {
+      setMapsReady('failed')
+    }
+
     return () => {
       if (autocompleteRef.current && window.google?.maps?.event) {
         window.google.maps.event.clearInstanceListeners(autocompleteRef.current)
         autocompleteRef.current = null
       }
     }
-  }, [apiKey, initAutocomplete])
+  }, [mapsReady, onChange])
 
-  // If no API key, render plain input
-  if (!apiKey) {
+  // Plain text fallback (no API key, or Maps failed to load)
+  if (!apiKey || mapsReady === 'failed') {
     return (
       <input
         type="text"
@@ -87,13 +102,15 @@ export default function AddressInput({
     )
   }
 
+  // When Maps is ready, use an uncontrolled input so autocomplete can
+  // manage the field value — we update React state only on place_changed
   return (
     <div className="relative">
       <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none z-10" />
       <input
         ref={inputRef}
         type="text"
-        value={value}
+        defaultValue={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
