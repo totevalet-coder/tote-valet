@@ -37,6 +37,7 @@ function RegisterForm() {
 
   const [step, setStep] = useState<Step>(1)
   const [data, setData] = useState<OnboardingData>(INITIAL_DATA)
+  const [addressVerified, setAddressVerified] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -195,6 +196,7 @@ function RegisterForm() {
                 <AddressInput
                   value={data.address}
                   onChange={val => update('address', val)}
+                  onVerified={setAddressVerified}
                   placeholder="123 Main St, Coopersburg, PA"
                 />
               </div>
@@ -229,6 +231,10 @@ function RegisterForm() {
                 onClick={() => {
                   if (!data.name || !data.phone || !data.address) {
                     setError('Please fill in all fields.')
+                    return
+                  }
+                  if (!addressVerified) {
+                    setError('Please select a verified address from the dropdown suggestions.')
                     return
                   }
                   if (!isOAuth && (!data.email || !data.password)) {

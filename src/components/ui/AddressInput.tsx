@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { MapPin } from 'lucide-react'
+import { MapPin, AlertCircle } from 'lucide-react'
 
 interface AddressInputProps {
   value: string
   onChange: (value: string) => void
+  onVerified?: (verified: boolean) => void  // called true when place selected, false when manually edited
   placeholder?: string
   className?: string
   disabled?: boolean
@@ -38,6 +39,7 @@ function loadGoogleMapsScript(apiKey: string) {
 export default function AddressInput({
   value,
   onChange,
+  onVerified,
   placeholder = '123 Main St, City, State',
   className,
   disabled,
@@ -45,15 +47,13 @@ export default function AddressInput({
   const inputRef = useRef<HTMLInputElement>(null)
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null)
   const [mapsReady, setMapsReady] = useState<MapsState>(mapsState)
+  const [verified, setVerified] = useState(false)
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 
   useEffect(() => {
     if (!apiKey) { setMapsReady('failed'); return }
-
     if (mapsState === 'ready') { setMapsReady('ready'); return }
     if (mapsState === 'failed') { setMapsReady('failed'); return }
-
-    // Still loading — register callback and kick off load
     mapsCallbacks.push(setMapsReady)
     loadGoogleMapsScript(apiKey)
   }, [apiKey])
@@ -74,6 +74,8 @@ export default function AddressInput({
         const place = ac.getPlace()
         if (place?.formatted_address) {
           onChange(place.formatted_address)
+          setVerified(true)
+          onVerified?.(true)
         }
       })
     } catch {
@@ -86,10 +88,19 @@ export default function AddressInput({
         autocompleteRef.current = null
       }
     }
-  }, [mapsReady, onChange])
+  }, [mapsReady, onChange, onVerified])
 
-  // Plain text fallback (no API key, or Maps failed to load)
-  if (!apiKey || mapsReady === 'failed') {
+  function handleManualChange(e: React.ChangeEvent<HTMLInputElement>) {
+    onChange(e.target.value)
+    // Mark unverified when user edits manually
+    if (verified) {
+      setVerified(false)
+      onVerified?.(false)
+    }
+  }
+
+  // No API key — plain input, no verification required
+  if (!apiKey) {
     return (
       <input
         type="text"
@@ -102,21 +113,44 @@ export default function AddressInput({
     )
   }
 
-  // When Maps is ready, use an uncontrolled input so autocomplete can
-  // manage the field value — we update React state only on place_changed
-  return (
-    <div className="relative">
-      <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none z-10" />
+  // Maps failed — plain input with warning
+  if (mapsReady === 'failed') {
+    return (
       <input
-        ref={inputRef}
         type="text"
-        defaultValue={value}
+        value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
-        className={`${className ?? 'input-field'} pl-9`}
-        autoComplete="off"
+        className={className ?? 'input-field'}
       />
+    )
+  }
+
+  // Maps active — uncontrolled input with autocomplete
+  const showUnverifiedHint = value.length > 5 && !verified
+
+  return (
+    <div className="space-y-1">
+      <div className="relative">
+        <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none z-10" />
+        <input
+          ref={inputRef}
+          type="text"
+          defaultValue={value}
+          onChange={handleManualChange}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={`${className ?? 'input-field'} pl-9 ${showUnverifiedHint ? 'border-amber-400 focus:ring-amber-400' : ''}`}
+          autoComplete="off"
+        />
+      </div>
+      {showUnverifiedHint && (
+        <p className="flex items-center gap-1.5 text-xs text-amber-600">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+          Please select an address from the dropdown suggestions
+        </p>
+      )}
     </div>
   )
 }
