@@ -10,7 +10,9 @@ export default function RootPage() {
   useEffect(() => {
     async function checkAuth() {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      // getSession reads from local cookies — no network needed on app open
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user ?? null
 
       if (!user) {
         router.replace('/landing')
