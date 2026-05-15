@@ -30,7 +30,7 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
 
     async function init() {
       try {
-        // Request high resolution + continuous autofocus for better range
+        // Request high resolution rear camera
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: 'environment' },
@@ -40,6 +40,16 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
         })
 
         if (!active || !videoRef.current) { stream.getTracks().forEach(t => t.stop()); return }
+
+        // Enable continuous autofocus if the device supports it
+        const track = stream.getVideoTracks()[0]
+        if (track) {
+          try {
+            await track.applyConstraints({
+              advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+            })
+          } catch { /* not supported on all devices, safe to ignore */ }
+        }
 
         const { BrowserMultiFormatReader } = await import('@zxing/browser')
         const { DecodeHintType } = await import('@zxing/library')
