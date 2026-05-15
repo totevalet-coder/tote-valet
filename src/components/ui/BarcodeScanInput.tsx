@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Camera, ScanLine, X } from 'lucide-react'
+import { Camera, ScanLine, X, Zap } from 'lucide-react'
 
 interface Props {
   onScan: (value: string) => void
@@ -14,12 +14,18 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
   const [scanning, setScanning] = useState(false)
   const [cameraError, setCameraError] = useState('')
   const [manualValue, setManualValue] = useState('')
+  const [torchOn, setTorchOn] = useState(false)
+  const [torchSupported, setTorchSupported] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const readerRef = useRef<{ reset: () => void } | null>(null)
+  const trackRef = useRef<MediaStreamTrack | null>(null)
 
   const stopScanning = useCallback(() => {
     try { readerRef.current?.reset() } catch { /* ignore */ }
     readerRef.current = null
+    trackRef.current = null
+    setTorchOn(false)
+    setTorchSupported(false)
     setScanning(false)
   }, [])
 
@@ -30,7 +36,6 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
 
     async function init() {
       try {
-        // Request high resolution rear camera
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: 'environment' },
@@ -41,14 +46,20 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
 
         if (!active || !videoRef.current) { stream.getTracks().forEach(t => t.stop()); return }
 
-        // Enable continuous autofocus if the device supports it
         const track = stream.getVideoTracks()[0]
+        trackRef.current = track ?? null
+
         if (track) {
+          // Enable continuous autofocus
           try {
             await track.applyConstraints({
               advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
             })
-          } catch { /* not supported on all devices, safe to ignore */ }
+          } catch { /* ignore */ }
+
+          // Check torch support
+          const caps = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean }
+          if (caps.torch) setTorchSupported(true)
         }
 
         const { BrowserMultiFormatReader } = await import('@zxing/browser')
@@ -79,9 +90,21 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
       active = false
       try { readerRef.current?.reset() } catch { /* ignore */ }
       readerRef.current = null
+      trackRef.current = null
       stream?.getTracks().forEach(t => t.stop())
     }
   }, [scanning, onScan, stopScanning])
+
+  async function toggleTorch() {
+    if (!trackRef.current) return
+    const next = !torchOn
+    try {
+      await trackRef.current.applyConstraints({
+        advanced: [{ torch: next } as MediaTrackConstraintSet],
+      })
+      setTorchOn(next)
+    } catch { /* ignore */ }
+  }
 
   function handleManual(e: React.FormEvent) {
     e.preventDefault()
@@ -107,15 +130,12 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
           {/* Dimmed surround */}
           <div className="absolute inset-0 bg-black/55 pointer-events-none" />
 
-          {/* Viewfinder cutout */}
+          {/* Viewfinder */}
           <div className="relative z-10 w-72 h-44">
-            {/* Corner marks */}
             <div className="absolute top-0 left-0 w-7 h-7 border-t-4 border-l-4 border-white rounded-tl-lg" />
             <div className="absolute top-0 right-0 w-7 h-7 border-t-4 border-r-4 border-white rounded-tr-lg" />
             <div className="absolute bottom-0 left-0 w-7 h-7 border-b-4 border-l-4 border-white rounded-bl-lg" />
             <div className="absolute bottom-0 right-0 w-7 h-7 border-b-4 border-r-4 border-white rounded-br-lg" />
-
-            {/* Animated scan line */}
             <div
               className="absolute inset-x-2 h-0.5 bg-brand-blue shadow-[0_0_6px_2px_rgba(0,160,223,0.6)]"
               style={{ animation: 'scan-line 1.6s ease-in-out infinite' }}
@@ -126,17 +146,33 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
             Align barcode inside the box
           </p>
 
-          <button
-            onClick={stopScanning}
-            className="relative z-10 mt-5 flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-7 py-3 rounded-full font-semibold transition-colors"
-          >
-            <X className="w-4 h-4" /> Cancel
-          </button>
+          <div className="relative z-10 mt-5 flex items-center gap-3">
+            {/* Torch toggle — only shown if device supports it */}
+            {torchSupported && (
+              <button
+                onClick={toggleTorch}
+                className={`flex items-center gap-2 px-5 py-3 rounded-full font-semibold transition-colors ${
+                  torchOn
+                    ? 'bg-yellow-400 text-black'
+                    : 'bg-white/15 hover:bg-white/25 text-white'
+                }`}
+              >
+                <Zap className="w-4 h-4" />
+                {torchOn ? 'Light On' : 'Light'}
+              </button>
+            )}
+
+            <button
+              onClick={stopScanning}
+              className="flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-7 py-3 rounded-full font-semibold transition-colors"
+            >
+              <X className="w-4 h-4" /> Cancel
+            </button>
+          </div>
         </div>
       )}
 
       <div className="space-y-3">
-        {/* Primary — live camera */}
         <button
           type="button"
           onClick={() => { setCameraError(''); setScanning(true) }}
@@ -154,7 +190,6 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
           </p>
         )}
 
-        {/* Secondary — manual entry */}
         <form onSubmit={handleManual} className="flex gap-2">
           <div className="relative flex-1">
             <ScanLine className={`absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 ${large ? 'w-5 h-5' : 'w-4 h-4'}`} />
