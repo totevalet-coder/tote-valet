@@ -5,16 +5,49 @@ const LS_KEY = 'tv-session'
 
 type Cookie = { name: string; value: string }
 
+function readStoredCookies(): Cookie[] {
+  try {
+    return JSON.parse(localStorage.getItem(LS_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+function writeStoredCookies(cookies: Cookie[]) {
+  localStorage.setItem(LS_KEY, JSON.stringify(cookies))
+}
+
+// Read Supabase tokens that the server set in document.cookie (e.g. after Google OAuth)
+// and copy them into localStorage so they survive Chrome's "clear cookies on exit".
+function syncServerCookiesToLocalStorage(stored: Cookie[]): Cookie[] {
+  if (typeof document === 'undefined') return stored
+  const storedNames = new Set(stored.map(c => c.name))
+  const incoming: Cookie[] = []
+  for (const raw of document.cookie.split(';')) {
+    const eq = raw.indexOf('=')
+    if (eq === -1) continue
+    const name = raw.slice(0, eq).trim()
+    const value = raw.slice(eq + 1).trim()
+    if (name.startsWith('sb-') && !name.includes('code-verifier') && !storedNames.has(name)) {
+      incoming.push({ name, value })
+    }
+  }
+  if (incoming.length === 0) return stored
+  const merged = [...stored, ...incoming]
+  writeStoredCookies(merged)
+  return merged
+}
+
 function getAll(): Cookie[] {
   if (typeof window === 'undefined') return []
 
   // Auth session tokens from localStorage (survives browser restart)
-  let stored: Cookie[] = []
-  try {
-    stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]')
-  } catch {}
+  let stored = readStoredCookies()
 
-  // PKCE code verifiers from sessionStorage (survives OAuth redirect within same tab)
+  // Sync any Supabase tokens the server set in cookies (Google OAuth callback)
+  stored = syncServerCookiesToLocalStorage(stored)
+
+  // PKCE code verifiers from sessionStorage (survives OAuth redirect, same tab only)
   const pkce: Cookie[] = []
   try {
     for (let i = 0; i < sessionStorage.length; i++) {
@@ -40,14 +73,11 @@ function setAll(cookies: Cookie[]) {
         sessionStorage.removeItem(name)
       }
     } else {
-      // Auth session tokens — merge into localStorage so we don't lose other keys
-      let existing: Cookie[] = []
-      try {
-        existing = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]')
-      } catch {}
+      // Auth session tokens — merge into localStorage one at a time
+      const existing = readStoredCookies()
       const without = existing.filter(c => c.name !== name)
       const updated = value ? [...without, { name, value }] : without
-      localStorage.setItem(LS_KEY, JSON.stringify(updated))
+      writeStoredCookies(updated)
     }
   }
 }
