@@ -5,22 +5,34 @@ const LS_KEY = 'tv-session'
 
 type Cookie = { name: string; value: string }
 
-function readStoredCookies(): Cookie[] {
-  try {
-    return JSON.parse(localStorage.getItem(LS_KEY) ?? '[]')
-  } catch {
-    return []
-  }
+function readLS(): Cookie[] {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '[]') } catch { return [] }
 }
 
-function writeStoredCookies(cookies: Cookie[]) {
+function writeLS(cookies: Cookie[]) {
   localStorage.setItem(LS_KEY, JSON.stringify(cookies))
 }
 
-// Read Supabase tokens that the server set in document.cookie (e.g. after Google OAuth)
-// and copy them into localStorage so they survive Chrome's "clear cookies on exit".
-function syncServerCookiesToLocalStorage(stored: Cookie[]): Cookie[] {
-  if (typeof document === 'undefined') return stored
+function readBrowserCookie(name: string): string | null {
+  for (const raw of document.cookie.split(';')) {
+    const eq = raw.indexOf('=')
+    if (eq === -1) continue
+    if (raw.slice(0, eq).trim() === name) return raw.slice(eq + 1).trim()
+  }
+  return null
+}
+
+function writeBrowserCookie(name: string, value: string) {
+  document.cookie = `${name}=${value}; path=/; SameSite=Lax`
+}
+
+function deleteBrowserCookie(name: string) {
+  document.cookie = `${name}=; path=/; max-age=0`
+}
+
+// After Google OAuth, the server stores session tokens in real cookies.
+// Sync those into localStorage so they survive Chrome's "clear cookies on exit".
+function syncServerSessionToLS(stored: Cookie[]): Cookie[] {
   const storedNames = new Set(stored.map(c => c.name))
   const incoming: Cookie[] = []
   for (const raw of document.cookie.split(';')) {
@@ -34,29 +46,27 @@ function syncServerCookiesToLocalStorage(stored: Cookie[]): Cookie[] {
   }
   if (incoming.length === 0) return stored
   const merged = [...stored, ...incoming]
-  writeStoredCookies(merged)
+  writeLS(merged)
   return merged
 }
 
 function getAll(): Cookie[] {
   if (typeof window === 'undefined') return []
 
-  // Auth session tokens from localStorage (survives browser restart)
-  let stored = readStoredCookies()
+  // Session tokens from localStorage (persists across browser restarts)
+  let stored = readLS()
+  stored = syncServerSessionToLS(stored)
 
-  // Sync any Supabase tokens the server set in cookies (Google OAuth callback)
-  stored = syncServerCookiesToLocalStorage(stored)
-
-  // PKCE code verifiers from sessionStorage (survives OAuth redirect, same tab only)
+  // PKCE code verifiers from real browser cookies — server needs to read these
+  // during the OAuth callback. Session cookies (no max-age) survive the redirect.
   const pkce: Cookie[] = []
-  try {
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const k = sessionStorage.key(i)
-      if (k?.includes('code-verifier')) {
-        pkce.push({ name: k, value: sessionStorage.getItem(k) ?? '' })
-      }
-    }
-  } catch {}
+  for (const raw of document.cookie.split(';')) {
+    const eq = raw.indexOf('=')
+    if (eq === -1) continue
+    const name = raw.slice(0, eq).trim()
+    const value = raw.slice(eq + 1).trim()
+    if (name.includes('code-verifier')) pkce.push({ name, value })
+  }
 
   return [...stored, ...pkce]
 }
@@ -66,18 +76,14 @@ function setAll(cookies: Cookie[]) {
 
   for (const { name, value } of cookies) {
     if (name.includes('code-verifier')) {
-      // PKCE verifier only needs to survive the OAuth redirect
-      if (value) {
-        sessionStorage.setItem(name, value)
-      } else {
-        sessionStorage.removeItem(name)
-      }
+      // Must live in real cookies — server reads them during OAuth code exchange
+      if (value) writeBrowserCookie(name, value)
+      else deleteBrowserCookie(name)
     } else {
-      // Auth session tokens — merge into localStorage one at a time
-      const existing = readStoredCookies()
+      // Session tokens → localStorage (survives "clear cookies on exit")
+      const existing = readLS()
       const without = existing.filter(c => c.name !== name)
-      const updated = value ? [...without, { name, value }] : without
-      writeStoredCookies(updated)
+      writeLS(value ? [...without, { name, value }] : without)
     }
   }
 }
