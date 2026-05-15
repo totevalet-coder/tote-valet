@@ -59,10 +59,17 @@ function MyItemsContent() {
   const [submitting, setSubmitting] = useState(false)
 
   // Pickup state
+  const [pickupMode, setPickupMode] = useState<'storage' | 'return_empties'>('storage')
   const [pickupSelected, setPickupSelected] = useState<Set<string>>(new Set())
   const [pickupStep, setPickupStep] = useState<'select' | 'confirm' | 'date' | 'done'>('select')
   const [pickupDate, setPickupDate] = useState('')
   const [requestingPickup, setRequestingPickup] = useState(false)
+
+  // Return empty totes state
+  const [emptyReturnSelected, setEmptyReturnSelected] = useState<Set<string>>(new Set())
+  const [emptyReturnDate, setEmptyReturnDate] = useState('')
+  const [emptyReturnStep, setEmptyReturnStep] = useState<'select' | 'date' | 'done'>('select')
+  const [submittingEmptyReturn, setSubmittingEmptyReturn] = useState(false)
 
   // Inventory confirmation state
   const [confirmIdx, setConfirmIdx] = useState(0)
@@ -167,7 +174,8 @@ function MyItemsContent() {
     loadConfirmUrls(updated)
   }
 
-  const homeTotes = totes.filter(t => t.status === 'empty_at_customer' && !t.pickup_requested)
+  const storageReadyTotes = totes.filter(t => t.status === 'empty_at_customer' && !t.pickup_requested && t.items.length > 0)
+  const emptyReturnTotes = totes.filter(t => t.status === 'empty_at_customer' && !t.pickup_requested && t.items.length === 0)
   const storedTotes = totes.filter(t => t.status === 'stored' || t.status === 'ready_to_stow')
 
   const filteredTotes = totes.filter(t => {
@@ -229,6 +237,36 @@ function MyItemsContent() {
     }
   }
 
+  async function handleReturnEmpties() {
+    if (!emptyReturnDate) { setError('Please choose a pickup date.'); return }
+    const ids = Array.from(emptyReturnSelected)
+    setSubmittingEmptyReturn(true)
+    setError(null)
+    try {
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData.user) throw new Error('Not logged in')
+      const { data: customer } = await supabase.from('customers').select('id').eq('auth_id', userData.user.id).single()
+      if (!customer) throw new Error('Customer not found')
+
+      await supabase.from('totes').update({ pickup_requested: true }).in('id', ids)
+      setTotes(prev => prev.map(t => ids.includes(t.id) ? { ...t, pickup_requested: true } : t))
+
+      await supabase.from('tote_requests').insert({
+        customer_id: customer.id,
+        type: 'empty_tote_return',
+        tote_ids: ids,
+        preferred_date: emptyReturnDate,
+        status: 'pending',
+      })
+
+      setEmptyReturnStep('done')
+    } catch {
+      setError('Failed to schedule return. Please try again.')
+    } finally {
+      setSubmittingEmptyReturn(false)
+    }
+  }
+
   function toggleReturnSelect(id: string) {
     setReturnSelected(prev => {
       const next = new Set(prev)
@@ -243,7 +281,21 @@ function MyItemsContent() {
     setSubmitting(true)
     setError(null)
     try {
-      await supabase.from('totes').update({ status: 'pending_pick' }).in('id', Array.from(returnSelected))
+      const { data: userData } = await supabase.auth.getUser()
+      if (!userData.user) throw new Error('Not logged in')
+      const { data: customer } = await supabase.from('customers').select('id').eq('auth_id', userData.user.id).single()
+      if (!customer) throw new Error('Customer not found')
+
+      const ids = Array.from(returnSelected)
+      await supabase.from('totes').update({ status: 'pending_pick' }).in('id', ids)
+      await supabase.from('tote_requests').insert({
+        customer_id: customer.id,
+        type: 'tote_return',
+        tote_ids: ids,
+        preferred_date: deliveryDate,
+        status: 'pending',
+      })
+
       setReturnStep('done')
     } catch {
       setError('Failed to submit return request.')
@@ -353,12 +405,19 @@ function MyItemsContent() {
             <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-semibold rounded-xl px-4 py-4 text-center">
               ✓ Pickup Requested — we&apos;ll be in touch to schedule
             </div>
-          ) : (
+          ) : selectedTote.items.length > 0 ? (
             <button
-              onClick={() => { setSelectedTote(null); setTab('pickup'); setPickupSelected(new Set([selectedTote.id])) }}
+              onClick={() => { setSelectedTote(null); setTab('pickup'); setPickupMode('storage'); setPickupSelected(new Set([selectedTote.id])) }}
               className="btn-primary w-full"
             >
               Request Pickup for Storage
+            </button>
+          ) : (
+            <button
+              onClick={() => { setSelectedTote(null); setTab('pickup'); setPickupMode('return_empties'); setEmptyReturnSelected(new Set([selectedTote.id])) }}
+              className="btn-primary w-full"
+            >
+              Return This Tote to Tote Valet
             </button>
           )
         )}
@@ -457,53 +516,74 @@ function MyItemsContent() {
           <h1 className="text-2xl font-black text-brand-navy">Request Pickup</h1>
           <TabBar />
 
-          {pickupStep === 'done' ? (
-            <div className="text-center py-8">
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
-                <CheckCircle2 className="w-10 h-10 text-green-600" />
-              </div>
-              <h2 className="text-2xl font-black text-brand-navy mb-2">Pickup Requested!</h2>
-              <p className="text-gray-500 text-sm mb-2">
-                {pickupSelected.size} tote{pickupSelected.size !== 1 ? 's' : ''} scheduled for pickup.
-              </p>
-              <p className="text-gray-400 text-xs mb-6">
-                Preferred date:{' '}
-                {new Date(pickupDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              </p>
-              <button onClick={() => { setPickupStep('select'); setPickupSelected(new Set()); setPickupDate(''); setConfirmIdx(0); setConfirmChangeMode(null); setConfirmRemoveSelected(new Set()); setConfirmUrls([]); setTab('browse') }} className="btn-primary w-full">
-                Back to My Items
-              </button>
-            </div>
-          ) : pickupStep === 'date' ? (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-lg font-bold text-brand-navy">Choose Pickup Date</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  Scheduling pickup for {pickupSelected.size} tote{pickupSelected.size !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Preferred Pickup Date</label>
-                <input
-                  type="date"
-                  value={pickupDate}
-                  onChange={e => setPickupDate(e.target.value)}
-                  min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
-                  className="input-field"
-                />
-                <p className="text-xs text-gray-400 mt-1">We&apos;ll confirm the exact date once scheduled.</p>
-              </div>
+          {/* Mode toggle — hidden once deep in a flow */}
+          {pickupStep !== 'confirm' && pickupStep !== 'done' && emptyReturnStep !== 'done' && (
+            <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
               <button
-                onClick={handleRequestPickup}
-                disabled={requestingPickup || !pickupDate}
-                className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50"
+                onClick={() => { setPickupMode('storage'); setPickupStep('select'); setPickupSelected(new Set()) }}
+                className={`flex-1 py-2.5 rounded-lg text-xs font-semibold transition-all ${pickupMode === 'storage' ? 'bg-white text-brand-navy shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                {requestingPickup && <Loader2 className="w-4 h-4 animate-spin" />}
-                <Truck className="w-4 h-4" />
-                Confirm Pickup Request
+                Send to Storage
+              </button>
+              <button
+                onClick={() => { setPickupMode('return_empties'); setEmptyReturnStep('select'); setEmptyReturnSelected(new Set()) }}
+                className={`flex-1 py-2.5 rounded-lg text-xs font-semibold transition-all ${pickupMode === 'return_empties' ? 'bg-white text-brand-navy shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Return Empty Totes
               </button>
             </div>
-          ) : pickupStep === 'confirm' ? (() => {
+          )}
+
+          {/* ── Storage pickup sub-flow ── */}
+          {pickupMode === 'storage' && (
+            <>
+              {pickupStep === 'done' ? (
+                <div className="text-center py-8">
+                  <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                    <CheckCircle2 className="w-10 h-10 text-green-600" />
+                  </div>
+                  <h2 className="text-2xl font-black text-brand-navy mb-2">Pickup Requested!</h2>
+                  <p className="text-gray-500 text-sm mb-2">
+                    {pickupSelected.size} tote{pickupSelected.size !== 1 ? 's' : ''} scheduled for pickup.
+                  </p>
+                  <p className="text-gray-400 text-xs mb-6">
+                    Preferred date:{' '}
+                    {new Date(pickupDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                  </p>
+                  <button onClick={() => { setPickupStep('select'); setPickupSelected(new Set()); setPickupDate(''); setConfirmIdx(0); setConfirmChangeMode(null); setConfirmRemoveSelected(new Set()); setConfirmUrls([]); setTab('browse') }} className="btn-primary w-full">
+                    Back to My Items
+                  </button>
+                </div>
+              ) : pickupStep === 'date' ? (
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-brand-navy">Choose Pickup Date</h2>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Scheduling pickup for {pickupSelected.size} tote{pickupSelected.size !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Preferred Pickup Date</label>
+                    <input
+                      type="date"
+                      value={pickupDate}
+                      onChange={e => setPickupDate(e.target.value)}
+                      min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                      className="input-field"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">We&apos;ll confirm the exact date once scheduled.</p>
+                  </div>
+                  <button
+                    onClick={handleRequestPickup}
+                    disabled={requestingPickup || !pickupDate}
+                    className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {requestingPickup && <Loader2 className="w-4 h-4 animate-spin" />}
+                    <Truck className="w-4 h-4" />
+                    Confirm Pickup Request
+                  </button>
+                </div>
+              ) : pickupStep === 'confirm' ? (() => {
             const pickupTotesArr = totes.filter(t => pickupSelected.has(t.id))
             const currentTote = pickupTotesArr[confirmIdx]
             if (!currentTote) return null
@@ -681,56 +761,167 @@ function MyItemsContent() {
                 )}
               </div>
             )
-          })() : homeTotes.length === 0 ? (
-            <div className="text-center py-12">
-              <Truck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">No totes ready for pickup</p>
-              <p className="text-gray-400 text-sm mt-1">All your home totes have already been requested</p>
-            </div>
-          ) : (
-            <>
-              <p className="text-sm text-gray-500">Select which totes you&apos;d like us to pick up and bring to storage.</p>
+              })() : storageReadyTotes.length === 0 ? (
+                <div className="text-center py-12">
+                  <Truck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 font-medium">No packed totes ready for pickup</p>
+                  <p className="text-gray-400 text-sm mt-1">Pack some items into a tote first, then request a pickup</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500">Select which totes you&apos;d like us to pick up and bring to storage.</p>
 
-              {/* Request All button */}
-              <button
-                onClick={() => { const all = new Set(homeTotes.map(t => t.id)); setPickupSelected(all); enterConfirmStep(all) }}
-                className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white rounded-2xl px-6 py-4 font-bold hover:bg-blue-900 active:scale-[0.98] transition-all"
-              >
-                <Truck className="w-5 h-5" />
-                Request All {homeTotes.length} Tote{homeTotes.length !== 1 ? 's' : ''} for Pickup
-              </button>
-
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
-                <div className="relative flex justify-center"><span className="bg-gray-50 px-3 text-xs text-gray-400">or select individual totes</span></div>
-              </div>
-
-              <div className="space-y-3">
-                {homeTotes.map(tote => (
                   <button
-                    key={tote.id}
-                    onClick={() => togglePickupSelect(tote.id)}
-                    className={`w-full card flex items-center gap-4 transition-all duration-150 ${
-                      pickupSelected.has(tote.id) ? 'border-2 border-brand-blue bg-brand-blue/5 shadow-md' : 'hover:shadow-md'
-                    }`}
+                    onClick={() => { const all = new Set(storageReadyTotes.map(t => t.id)); setPickupSelected(all); enterConfirmStep(all) }}
+                    className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white rounded-2xl px-6 py-4 font-bold hover:bg-blue-900 active:scale-[0.98] transition-all"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-brand-navy/5 flex items-center justify-center flex-shrink-0 text-xl">📦</div>
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="font-bold text-brand-navy text-sm truncate">{tote.tote_name ?? tote.id}</p>
-                      <p className="text-xs text-gray-400">{tote.items.length} item{tote.items.length !== 1 ? 's' : ''}</p>
-                    </div>
-                    {pickupSelected.has(tote.id) && <CheckCircle2 className="w-5 h-5 text-brand-blue flex-shrink-0" />}
+                    <Truck className="w-5 h-5" />
+                    Request All {storageReadyTotes.length} Tote{storageReadyTotes.length !== 1 ? 's' : ''} for Pickup
                   </button>
-                ))}
-              </div>
 
-              {pickupSelected.size > 0 && (
-                <button
-                  onClick={() => enterConfirmStep(pickupSelected)}
-                  className="btn-primary w-full"
-                >
-                  Review &amp; Confirm Inventory ({pickupSelected.size} Tote{pickupSelected.size !== 1 ? 's' : ''})
-                </button>
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
+                    <div className="relative flex justify-center"><span className="bg-gray-50 px-3 text-xs text-gray-400">or select individual totes</span></div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {storageReadyTotes.map(tote => (
+                      <button
+                        key={tote.id}
+                        onClick={() => togglePickupSelect(tote.id)}
+                        className={`w-full card flex items-center gap-4 transition-all duration-150 ${
+                          pickupSelected.has(tote.id) ? 'border-2 border-brand-blue bg-brand-blue/5 shadow-md' : 'hover:shadow-md'
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-brand-navy/5 flex items-center justify-center flex-shrink-0 text-xl">📦</div>
+                        <div className="flex-1 text-left min-w-0">
+                          <p className="font-bold text-brand-navy text-sm truncate">{tote.tote_name ?? tote.id}</p>
+                          <p className="text-xs text-gray-400">{tote.items.length} item{tote.items.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        {pickupSelected.has(tote.id) && <CheckCircle2 className="w-5 h-5 text-brand-blue flex-shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+
+                  {pickupSelected.size > 0 && (
+                    <button
+                      onClick={() => enterConfirmStep(pickupSelected)}
+                      className="btn-primary w-full"
+                    >
+                      Review &amp; Confirm Inventory ({pickupSelected.size} Tote{pickupSelected.size !== 1 ? 's' : ''})
+                    </button>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {/* ── Return empty totes sub-flow ── */}
+          {pickupMode === 'return_empties' && (
+            <>
+              {emptyReturnStep === 'done' ? (
+                <div className="text-center py-8">
+                  <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                    <CheckCircle2 className="w-10 h-10 text-green-600" />
+                  </div>
+                  <h2 className="text-2xl font-black text-brand-navy mb-2">Return Scheduled!</h2>
+                  <p className="text-gray-500 text-sm mb-2">
+                    {emptyReturnSelected.size} empty tote{emptyReturnSelected.size !== 1 ? 's' : ''} scheduled for return.
+                  </p>
+                  <p className="text-gray-400 text-xs mb-6">
+                    Preferred date:{' '}
+                    {new Date(emptyReturnDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                  </p>
+                  <button onClick={() => { setEmptyReturnStep('select'); setEmptyReturnSelected(new Set()); setEmptyReturnDate(''); setPickupMode('storage'); setTab('browse') }} className="btn-primary w-full">
+                    Back to My Items
+                  </button>
+                </div>
+              ) : emptyReturnStep === 'date' ? (
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-brand-navy">Choose Pickup Date</h2>
+                    <p className="text-sm text-gray-500 mt-1">
+                      We&apos;ll collect {emptyReturnSelected.size} empty tote{emptyReturnSelected.size !== 1 ? 's' : ''} from your door
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Preferred Date</label>
+                    <input
+                      type="date"
+                      value={emptyReturnDate}
+                      onChange={e => setEmptyReturnDate(e.target.value)}
+                      min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                      className="input-field"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">We&apos;ll confirm the exact date once scheduled.</p>
+                  </div>
+                  <button
+                    onClick={handleReturnEmpties}
+                    disabled={submittingEmptyReturn || !emptyReturnDate}
+                    className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {submittingEmptyReturn && <Loader2 className="w-4 h-4 animate-spin" />}
+                    <Truck className="w-4 h-4" />
+                    Schedule Collection
+                  </button>
+                </div>
+              ) : emptyReturnTotes.length === 0 ? (
+                <div className="text-center py-12">
+                  <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 font-medium">No empty totes at home</p>
+                  <p className="text-gray-400 text-sm mt-1">You have no empty totes to return right now</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500">Select the empty totes you&apos;d like us to collect from your door.</p>
+
+                  <button
+                    onClick={() => { setEmptyReturnSelected(new Set(emptyReturnTotes.map(t => t.id))); setEmptyReturnStep('date') }}
+                    className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white rounded-2xl px-6 py-4 font-bold hover:bg-blue-900 active:scale-[0.98] transition-all"
+                  >
+                    <Truck className="w-5 h-5" />
+                    Return All {emptyReturnTotes.length} Empty Tote{emptyReturnTotes.length !== 1 ? 's' : ''}
+                  </button>
+
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
+                    <div className="relative flex justify-center"><span className="bg-gray-50 px-3 text-xs text-gray-400">or select individual totes</span></div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {emptyReturnTotes.map(tote => (
+                      <button
+                        key={tote.id}
+                        onClick={() => {
+                          setEmptyReturnSelected(prev => {
+                            const next = new Set(prev)
+                            if (next.has(tote.id)) next.delete(tote.id); else next.add(tote.id)
+                            return next
+                          })
+                        }}
+                        className={`w-full card flex items-center gap-4 transition-all duration-150 ${
+                          emptyReturnSelected.has(tote.id) ? 'border-2 border-brand-blue bg-brand-blue/5 shadow-md' : 'hover:shadow-md'
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-brand-navy/5 flex items-center justify-center flex-shrink-0 text-xl">🗃️</div>
+                        <div className="flex-1 text-left min-w-0">
+                          <p className="font-bold text-brand-navy text-sm truncate">{tote.tote_name ?? tote.id}</p>
+                          <p className="text-xs text-gray-400">Empty tote</p>
+                        </div>
+                        {emptyReturnSelected.has(tote.id) && <CheckCircle2 className="w-5 h-5 text-brand-blue flex-shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+
+                  {emptyReturnSelected.size > 0 && (
+                    <button
+                      onClick={() => setEmptyReturnStep('date')}
+                      className="btn-primary w-full"
+                    >
+                      Schedule Collection ({emptyReturnSelected.size} Tote{emptyReturnSelected.size !== 1 ? 's' : ''})
+                    </button>
+                  )}
+                </>
               )}
             </>
           )}

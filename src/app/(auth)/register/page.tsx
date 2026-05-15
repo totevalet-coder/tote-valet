@@ -95,10 +95,11 @@ function RegisterForm() {
       }
 
       // Insert customer record
+      const customerId = crypto.randomUUID()
       const { error: customerError } = await supabase
         .from('customers')
         .insert({
-          id: crypto.randomUUID(),
+          id: customerId,
           auth_id: userId,
           name: data.name,
           email: data.email,
@@ -115,6 +116,17 @@ function RegisterForm() {
         })
 
       if (customerError) throw customerError
+
+      // Create the initial tote delivery request so it appears on the dashboard
+      if (data.firstPickupDate && data.startingTotes > 0) {
+        await supabase.from('tote_requests').insert({
+          customer_id: customerId,
+          type: 'empty_tote_delivery',
+          quantity: data.startingTotes,
+          preferred_date: data.firstPickupDate,
+          status: 'pending',
+        })
+      }
 
       setStep('done')
     } catch (err: unknown) {

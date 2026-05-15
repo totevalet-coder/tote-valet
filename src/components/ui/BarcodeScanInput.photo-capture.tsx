@@ -1,0 +1,142 @@
+'use client'
+
+/**
+ * BarcodeScanInput — PHOTO CAPTURE VERSION (backup / revert target)
+ *
+ * This is the working photo-capture implementation preserved before any
+ * real-time camera scanning experiments. If the live scanner causes problems,
+ * delete BarcodeScanInput.tsx and rename this file back to BarcodeScanInput.tsx.
+ *
+ * How it works:
+ *   Camera button → opens device camera as file picker (capture="environment")
+ *   → user takes photo → decoded via BarcodeDetector (native, Chrome/Safari 17+)
+ *   → falls back to html5-qrcode file decoder if BarcodeDetector unavailable
+ *   → manual text entry always available as secondary path
+ *
+ * Calls props.onScan(value) with a trimmed, uppercased result.
+ * Page-level validation errors live in each page — this component only
+ * surfaces photo-decode errors internally.
+ */
+
+import { useRef, useState } from 'react'
+import { Camera, ScanLine, Loader2 } from 'lucide-react'
+
+interface Props {
+  onScan: (value: string) => void
+  placeholder?: string
+  disabled?: boolean
+  large?: boolean
+}
+
+export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manually', disabled, large }: Props) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [manualValue, setManualValue] = useState('')
+  const [decoding, setDecoding] = useState(false)
+  const [decodeError, setDecodeError] = useState('')
+
+  // ── Photo capture → decode ─────────────────────────────────────────────────
+  async function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setDecoding(true)
+    setDecodeError('')
+
+    try {
+      // Native BarcodeDetector (Chrome Android, Safari 17+)
+      if ('BarcodeDetector' in window) {
+        const detector = new (window as Window & {
+          BarcodeDetector: new (opts: object) => {
+            detect: (img: HTMLImageElement) => Promise<Array<{ rawValue: string }>>
+          }
+        }).BarcodeDetector({
+          formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
+        })
+        const img = new Image()
+        img.src = URL.createObjectURL(file)
+        await new Promise<void>(r => { img.onload = () => r() })
+        const results = await detector.detect(img)
+        if (results.length > 0) {
+          onScan(results[0].rawValue.trim().toUpperCase())
+          return
+        }
+      }
+
+      // Fallback: html5-qrcode file decoder
+      const { Html5Qrcode } = await import('html5-qrcode')
+      const result = await Html5Qrcode.scanFile(file, false)
+      onScan(result.trim().toUpperCase())
+    } catch {
+      setDecodeError('Could not read barcode from photo. Enter the ID manually below.')
+    } finally {
+      setDecoding(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  // ── Manual entry ───────────────────────────────────────────────────────────
+  function handleManual(e: React.FormEvent) {
+    e.preventDefault()
+    const val = manualValue.trim().toUpperCase()
+    if (!val) return
+    setManualValue('')
+    setDecodeError('')
+    onScan(val)
+  }
+
+  const busy = disabled || decoding
+
+  return (
+    <div className="space-y-3">
+      {/* Primary — camera */}
+      <button
+        type="button"
+        onClick={() => { setDecodeError(''); fileRef.current?.click() }}
+        disabled={busy}
+        className={`w-full flex items-center justify-center gap-3 border-2 border-dashed border-brand-blue rounded-2xl text-brand-blue font-semibold hover:bg-brand-blue/5 active:bg-brand-blue/10 transition-colors disabled:opacity-50 ${large ? 'py-7 text-xl flex-col' : 'py-4'}`}
+      >
+        {decoding
+          ? <Loader2 className={large ? 'w-9 h-9 animate-spin' : 'w-5 h-5 animate-spin'} />
+          : <Camera className={large ? 'w-9 h-9' : 'w-5 h-5'} />}
+        {decoding ? 'Reading barcode…' : 'Scan Barcode'}
+        {large && !decoding && <span className="text-sm font-normal text-brand-blue/70">Tap to take photo</span>}
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handlePhoto}
+      />
+
+      {decodeError && (
+        <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-4 py-2">
+          {decodeError}
+        </p>
+      )}
+
+      {/* Secondary — manual */}
+      <form onSubmit={handleManual} className="flex gap-2">
+        <div className="relative flex-1">
+          <ScanLine className={`absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 ${large ? 'w-5 h-5' : 'w-4 h-4'}`} />
+          <input
+            type="text"
+            value={manualValue}
+            onChange={e => { setManualValue(e.target.value); setDecodeError('') }}
+            placeholder={placeholder}
+            className={`input-field pl-9 ${large ? 'text-base py-4' : 'text-sm'}`}
+            disabled={busy}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={busy || !manualValue.trim()}
+          className={`bg-brand-navy text-white rounded-xl font-semibold disabled:opacity-40 ${large ? 'px-5 text-base' : 'px-4 text-sm'}`}
+        >
+          Add
+        </button>
+      </form>
+    </div>
+  )
+}

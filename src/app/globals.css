@@ -13,6 +13,12 @@
   }
 }
 
+@keyframes scan-line {
+  0%   { top: 0%; }
+  50%  { top: calc(100% - 2px); }
+  100% { top: 0%; }
+}
+
 @layer components {
   .btn-primary {
     @apply bg-brand-navy text-white font-semibold px-6 py-3 rounded-xl

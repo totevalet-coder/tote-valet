@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import StatBox from '@/components/ui/StatBox'
-import { PlusCircle, PackageSearch, Package, Truck } from 'lucide-react'
+import { PlusCircle, PackageSearch, Package, Truck, ArrowUpFromLine, ArrowDownToLine } from 'lucide-react'
 import type { Tote } from '@/types/database'
 
 interface ToteStats {
@@ -20,6 +20,18 @@ interface PendingDelivery {
   preferred_date: string
 }
 
+interface PendingPickup {
+  id: string
+  tote_ids: string[]
+  preferred_date: string
+}
+
+interface PendingReturn {
+  id: string
+  tote_ids: string[]
+  preferred_date: string
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const supabase = createClient()
@@ -31,6 +43,8 @@ export default function DashboardPage() {
   })
   const [loading, setLoading] = useState(true)
   const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>([])
+  const [pendingPickups, setPendingPickups] = useState<PendingPickup[]>([])
+  const [pendingReturns, setPendingReturns] = useState<PendingReturn[]>([])
 
   const loadStats = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser()
@@ -50,7 +64,7 @@ export default function DashboardPage() {
       return
     }
 
-    const [totesRes, deliveriesRes] = await Promise.all([
+    const [totesRes, deliveriesRes, pickupsRes, returnsRes] = await Promise.all([
       supabase.from('totes').select('status, items').eq('customer_id', customer.id),
       supabase
         .from('tote_requests')
@@ -59,9 +73,25 @@ export default function DashboardPage() {
         .eq('type', 'empty_tote_delivery')
         .eq('status', 'pending')
         .order('preferred_date', { ascending: true }),
+      supabase
+        .from('tote_requests')
+        .select('id, tote_ids, preferred_date')
+        .eq('customer_id', customer.id)
+        .eq('type', 'pickup')
+        .eq('status', 'pending')
+        .order('preferred_date', { ascending: true }),
+      supabase
+        .from('tote_requests')
+        .select('id, tote_ids, preferred_date')
+        .eq('customer_id', customer.id)
+        .eq('type', 'tote_return')
+        .eq('status', 'pending')
+        .order('preferred_date', { ascending: true }),
     ])
 
     setPendingDeliveries(deliveriesRes.data ?? [])
+    setPendingPickups(pickupsRes.data ?? [])
+    setPendingReturns(returnsRes.data ?? [])
 
     const totes = totesRes.data
     if (totes) {
@@ -168,6 +198,54 @@ export default function DashboardPage() {
               </p>
               {extras > 0 && (
                 <p className="text-xs text-brand-blue mt-0.5">+{extras} more deliver{extras === 1 ? 'y' : 'ies'} pending</p>
+              )}
+            </div>
+          </button>
+        )
+      })()}
+
+      {/* Pending pickups */}
+      {pendingPickups.length > 0 && (() => {
+        const soonest = pendingPickups[0]
+        const toteCount = (soonest.tote_ids ?? []).length
+        const dateStr = new Date(soonest.preferred_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const extras = pendingPickups.length - 1
+        return (
+          <button
+            onClick={() => router.push('/my-items?tab=pickup')}
+            className="w-full flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-left hover:bg-amber-100 transition-colors"
+          >
+            <ArrowUpFromLine className="w-5 h-5 text-amber-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-brand-navy">
+                Pickup of {toteCount} tote{toteCount !== 1 ? 's' : ''} scheduled {dateStr}
+              </p>
+              {extras > 0 && (
+                <p className="text-xs text-amber-600 mt-0.5">+{extras} more pickup{extras === 1 ? '' : 's'} pending</p>
+              )}
+            </div>
+          </button>
+        )
+      })()}
+
+      {/* Pending returns */}
+      {pendingReturns.length > 0 && (() => {
+        const soonest = pendingReturns[0]
+        const toteCount = (soonest.tote_ids ?? []).length
+        const dateStr = new Date(soonest.preferred_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const extras = pendingReturns.length - 1
+        return (
+          <button
+            onClick={() => router.push('/my-items?tab=return')}
+            className="w-full flex items-center gap-3 bg-green-50 border border-green-200 rounded-2xl px-4 py-3 text-left hover:bg-green-100 transition-colors"
+          >
+            <ArrowDownToLine className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-brand-navy">
+                {toteCount} tote{toteCount !== 1 ? 's' : ''} returning {dateStr}
+              </p>
+              {extras > 0 && (
+                <p className="text-xs text-green-600 mt-0.5">+{extras} more return{extras === 1 ? '' : 's'} pending</p>
               )}
             </div>
           </button>
