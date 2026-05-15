@@ -26,14 +26,31 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
   useEffect(() => {
     if (!scanning) return
     let active = true
+    let stream: MediaStream | null = null
 
     async function init() {
       try {
+        // Request high resolution + continuous autofocus for better range
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        })
+
+        if (!active || !videoRef.current) { stream.getTracks().forEach(t => t.stop()); return }
+
         const { BrowserMultiFormatReader } = await import('@zxing/browser')
-        const reader = new BrowserMultiFormatReader()
+        const { DecodeHintType } = await import('@zxing/library')
+
+        const hints = new Map()
+        hints.set(DecodeHintType.TRY_HARDER, true)
+
+        const reader = new BrowserMultiFormatReader(hints)
         readerRef.current = reader as unknown as { reset: () => void }
 
-        await reader.decodeFromVideoDevice(undefined, videoRef.current!, (result) => {
+        await reader.decodeFromStream(stream, videoRef.current, (result) => {
           if (!active || !result) return
           if (navigator.vibrate) navigator.vibrate(80)
           stopScanning()
@@ -52,6 +69,7 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
       active = false
       try { readerRef.current?.reset() } catch { /* ignore */ }
       readerRef.current = null
+      stream?.getTracks().forEach(t => t.stop())
     }
   }, [scanning, onScan, stopScanning])
 
