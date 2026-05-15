@@ -61,7 +61,7 @@ export default function DebugPage() {
       const k = localStorage.key(i)
       if (k) lsKeys.push(k)
     }
-    const lsSession = localStorage.getItem('tote-valet-auth')
+    const lsSession = localStorage.getItem('tv-session')
 
     // 5. Standalone mode (PWA)
     const standalone =
