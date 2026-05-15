@@ -1,52 +1,50 @@
-import { redirect } from 'next/navigation'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+'use client'
 
-export default async function RootPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
-  if (!user) {
-    redirect('/landing')
-  }
+export default function RootPage() {
+  const router = useRouter()
 
-  // Use admin client for all DB lookups — bypasses RLS entirely
-  const adminClient = createAdminClient()
+  useEffect(() => {
+    async function checkAuth() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
 
-  // Fast path: look up by auth_id
-  let { data: customer } = await adminClient
-    .from('customers')
-    .select('id, role')
-    .eq('auth_id', user!.id)
-    .single()
+      if (!user) {
+        router.replace('/landing')
+        return
+      }
 
-  // Fallback: if auth_id doesn't match any row, find by email and self-heal
-  if (!customer && user!.email) {
-    const { data: byEmail } = await adminClient
-      .from('customers')
-      .select('id, role')
-      .eq('email', user!.email)
-      .single()
-
-    if (byEmail) {
-      await adminClient
+      const { data: customer } = await supabase
         .from('customers')
-        .update({ auth_id: user!.id })
-        .eq('id', byEmail.id)
-      customer = byEmail
+        .select('role')
+        .eq('auth_id', user.id)
+        .single()
+
+      if (!customer) {
+        router.replace('/login')
+        return
+      }
+
+      const routes: Record<string, string> = {
+        customer: '/dashboard',
+        driver: '/driver',
+        warehouse: '/warehouse',
+        sorter: '/sorter',
+        admin: '/admin',
+      }
+
+      router.replace(routes[customer.role] ?? '/dashboard')
     }
-  }
 
-  if (!customer) {
-    redirect('/login')
-  }
+    checkAuth()
+  }, [router])
 
-  const roleRoutes: Record<string, string> = {
-    customer: '/dashboard',
-    driver: '/driver',
-    warehouse: '/warehouse',
-    sorter: '/sorter',
-    admin: '/admin',
-  }
-
-  redirect(roleRoutes[customer.role] ?? '/dashboard')
+  return (
+    <div className="min-h-screen bg-brand-navy flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-4 border-white border-t-transparent animate-spin" />
+    </div>
+  )
 }
