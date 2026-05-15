@@ -298,7 +298,13 @@ export default function AddItemsPage() {
               }}
             />
             {barcodeValue && (
-              <p className="text-xs text-brand-blue mt-1 font-medium">Scanned: {barcodeValue}</p>
+              <div className="mt-3 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-green-600 font-medium">Tote ID captured</p>
+                  <p className="text-lg font-black text-green-700 tracking-wider">{barcodeValue}</p>
+                </div>
+              </div>
             )}
           </div>
 
