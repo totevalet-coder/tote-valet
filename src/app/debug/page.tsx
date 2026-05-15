@@ -12,6 +12,7 @@ interface DebugInfo {
   getUserError: string | null
   cookies: string[]
   localStorageKeys: string[]
+  lsSessionPresent: boolean
   userAgent: string
   standalone: boolean
 }
@@ -54,12 +55,13 @@ export default function DebugPage() {
       .map(c => c.trim())
       .filter(Boolean)
 
-    // 4. localStorage keys (supabase-related)
+    // 4. localStorage keys and tote-valet-auth value
     const lsKeys: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i)
       if (k) lsKeys.push(k)
     }
+    const lsSession = localStorage.getItem('tote-valet-auth')
 
     // 5. Standalone mode (PWA)
     const standalone =
@@ -82,6 +84,7 @@ export default function DebugPage() {
       getUserError: userError?.message ?? null,
       cookies: allCookies.length ? allCookies : ['(none visible)'],
       localStorageKeys: lsKeys.length ? lsKeys : ['(none)'],
+      lsSessionPresent: !!lsSession,
       userAgent: navigator.userAgent,
       standalone,
     })
@@ -148,6 +151,11 @@ export default function DebugPage() {
                 <p key={i} className="text-xs font-mono text-gray-700 break-all leading-5">{k}</p>
               ))}
             </div>
+            <Row
+              label="tote-valet-auth in localStorage"
+              value={info.lsSessionPresent ? '✓ Session key found' : '✗ Not found'}
+              ok={info.lsSessionPresent}
+            />
             <div className="py-2 pb-3">
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">User agent</p>
               <p className="text-xs font-mono text-gray-600 break-all leading-5">{info.userAgent}</p>
