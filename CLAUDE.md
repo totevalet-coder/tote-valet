@@ -129,8 +129,8 @@ Dashboard, Customers, Staff, Routes, Totes, Requests, Monitor, Billing, Settings
 - Warehouse/sorter/admin have broader access
 - `get_my_role()` helper function avoids RLS recursion
 
-### ⚠️ Action Required Before October 30, 2026
-Supabase is requiring explicit GRANTs for all tables. Run this in the SQL editor:
+### ✅ Supabase GRANTs — COMPLETED May 29, 2026
+Explicit GRANTs were added for all tables on May 29, 2026. No further action needed before the October 30, 2026 deadline.
 
 ```sql
 grant usage on schema public to anon, authenticated;
@@ -181,5 +181,5 @@ Claude API suggests item names from tote photos. Lives at `api/ai-label/`. Uses 
 4. Landing page — Video walkthrough (currently "Coming Soon")
 5. Landing page — Dedicated pricing page (currently links to /register)
 6. Landing page — Verify FAQ answers are populated
-7. Run Supabase GRANTs before October 30, 2026
+7. ~~Run Supabase GRANTs before October 30, 2026~~ ✅ Done May 29, 2026
 8. Decide on and run pending schema migrations when ready
