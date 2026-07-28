@@ -14,6 +14,10 @@ interface AddressInputProps {
 
 type MapsState = 'loading' | 'ready' | 'failed'
 
+// Don't spin up the Places widget on a fragment too short to be a real
+// address — cuts a few pointless lookups before the search is worth running.
+const MIN_ADDRESS_CHARS = 3
+
 let mapsState: MapsState = 'loading'
 const mapsCallbacks: Array<(state: MapsState) => void> = []
 
@@ -58,9 +62,10 @@ export default function AddressInput({
     loadGoogleMapsScript(apiKey)
   }, [apiKey])
 
-  // Init autocomplete once Maps is ready
+  // Init autocomplete once Maps is ready and there's enough typed to search
   useEffect(() => {
     if (mapsReady !== 'ready' || !inputRef.current || autocompleteRef.current) return
+    if (value.length < MIN_ADDRESS_CHARS) return
 
     try {
       const ac = new window.google.maps.places.Autocomplete(inputRef.current, {
@@ -88,7 +93,7 @@ export default function AddressInput({
         autocompleteRef.current = null
       }
     }
-  }, [mapsReady, onChange, onVerified])
+  }, [mapsReady, value, onChange, onVerified])
 
   function handleManualChange(e: React.ChangeEvent<HTMLInputElement>) {
     onChange(e.target.value)
