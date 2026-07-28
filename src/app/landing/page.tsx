@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { useState } from 'react'
-import { ChevronDown, Package, Truck, Warehouse, Home, CheckCircle2, Star, ArrowRight, Play } from 'lucide-react'
+import { ChevronDown, Package, Truck, Warehouse, Home, CheckCircle2, Star, ArrowRight } from 'lucide-react'
+import ExplainerAnimation from '@/components/ui/ExplainerAnimation'
 
 const HOW_IT_WORKS = [
   {
@@ -217,31 +218,18 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── VIDEO PLACEHOLDER ── */}
+      {/* ── HOW IT WORKS ANIMATION ── */}
       <section className="py-20 px-5 bg-white">
-        <div className="max-w-3xl mx-auto text-center">
+        <div className="max-w-xl mx-auto text-center">
           <p className="text-brand-blue font-bold text-sm uppercase tracking-widest mb-2">See It In Action</p>
           <h2 className="text-3xl font-black text-brand-navy mb-8">Watch how it works</h2>
 
-          <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-brand-navy to-brand-blue aspect-video flex items-center justify-center shadow-2xl group cursor-pointer">
-            {/* Placeholder thumbnail overlay */}
-            <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors" />
-            <div className="relative z-10 flex flex-col items-center gap-4">
-              <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur flex items-center justify-center border-2 border-white/40 group-hover:scale-110 transition-transform">
-                <Play className="w-9 h-9 text-white fill-white ml-1" />
-              </div>
-              <p className="text-white font-semibold text-sm opacity-80">Coming Soon</p>
-            </div>
-            {/* Decorative tote icons in background */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none select-none">
-              <span className="text-[200px]">📦</span>
-            </div>
-          </div>
+          <ExplainerAnimation />
 
           <p className="text-gray-400 text-sm mt-4">
-            Video walkthrough coming soon. In the meantime,{' '}
-            <Link href="/register" className="text-brand-blue font-semibold hover:underline">sign up free</Link>
-            {' '}to explore the app.
+            Ready to try it yourself?{' '}
+            <Link href="/register" className="text-brand-blue font-semibold hover:underline">Sign up free</Link>
+            {' '}and explore the app.
           </p>
         </div>
       </section>
