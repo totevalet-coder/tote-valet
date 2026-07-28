@@ -21,7 +21,7 @@ A tote pickup, storage, and delivery service for the **Lehigh Valley, PA**. Cust
 | Database + Auth | Supabase |
 | Payments | Stripe |
 | SMS | Twilio |
-| AI Labeling | Anthropic Claude API (`claude-sonnet-4-20250514`) |
+| AI Labeling | Anthropic Claude API (`claude-sonnet-5`) |
 | Deployment | Vercel |
 | Version Control | GitHub |
 
@@ -144,11 +144,11 @@ grant select, insert, update, delete on public.errors      to authenticated;
 
 Any new table you create also needs a matching GRANT or supabase-js won't see it.
 
-### Pending Migrations (commented out in schema.sql)
-- `totes.empty_since` — for 8-day grace period billing logic
-- `totes.pickup_requested` — for customer pickup requests
-- `route_status` enum: add `returning` value
-- `tote_requests` table — structured customer pickup/delivery requests
+### Migrations (schema.sql updated May 29, 2026 to match — see file for full history)
+- ✅ `totes.empty_since` — already live
+- ✅ `totes.pickup_requested` — already live
+- ✅ `tote_requests` table — already live (also has an `admin_notes` column not previously documented)
+- ✅ `route_status` enum: `returning` value — applied 2026-07-27
 
 ### Free Tier Warning
 Project is on Supabase free tier (pre-revenue). Auto-pauses after 7 days inactivity.
@@ -163,7 +163,7 @@ Monthly subscription billing per tote. `billing.ts` handles charge logic. Stripe
 SMS notifications to customers via `api/send-sms/`.
 
 ## AI Labeling
-Claude API suggests item names from tote photos. Lives at `api/ai-label/`. Uses `claude-sonnet-4-20250514`.
+Claude API suggests item names from tote photos. Lives at `api/ai-label/`. Uses `claude-sonnet-5`.
 
 ---
 
@@ -178,8 +178,9 @@ Claude API suggests item names from tote photos. Lives at `api/ai-label/`. Uses 
 1. Warehouse portal — Add "Sort" under Quick Actions
 2. Warehouse portal — Add "Sort" under Reports
 3. Warehouse portal — Add Live Inventory "unsorted" view
-4. Landing page — Video walkthrough (currently "Coming Soon")
+4. ~~Landing page — Video walkthrough (currently "Coming Soon")~~ ✅ Replaced 2026-07-28 with `src/components/ui/ExplainerAnimation.tsx` — a 5-scene animated CSS/SVG loop (sign in → pick date/quantity → fill & label → request pickup → search & request dropoff). Known to need further polish/iteration later — revisit pacing, scene content, and consider adding real screenshots or a narrated version once the flow is more final.
 5. Landing page — Dedicated pricing page (currently links to /register)
 6. Landing page — Verify FAQ answers are populated
 7. ~~Run Supabase GRANTs before October 30, 2026~~ ✅ Done May 29, 2026
-8. Decide on and run pending schema migrations when ready
+8. ~~Decide on and run pending schema migrations when ready~~ ✅ Done — all four confirmed/applied 2026-07-27 (see Migrations section above)
+9. AI photo labeling (`api/ai-label/`) — code is wired up and working (2026-07-27), but Anthropic account has no credit balance so it's effectively off. Add credits at console.anthropic.com when ready, OR evaluate a free on-device fallback (e.g. TensorFlow.js COCO-SSD in-browser) — tradeoff: free but much coarser generic labels vs. Claude's specific ones.
