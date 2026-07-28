@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useRoleGuard } from '@/lib/useRoleGuard'
 
 interface DebugInfo {
   timestamp: string
@@ -28,6 +29,7 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
 }
 
 export default function DebugPage() {
+  const { checking } = useRoleGuard(['admin'])
   const [info, setInfo] = useState<DebugInfo | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -92,6 +94,12 @@ export default function DebugPage() {
   }
 
   useEffect(() => { run() }, [])
+
+  if (checking) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-4 border-brand-navy border-t-transparent animate-spin" />
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">

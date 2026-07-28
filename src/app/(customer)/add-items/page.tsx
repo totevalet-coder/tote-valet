@@ -41,7 +41,18 @@ export default function AddItemsPage() {
   const [photoPaths, setPhotoPaths] = useState<string[]>([])      // storage paths
   const [photoThumbs, setPhotoThumbs] = useState<string[]>([])    // local blob URLs for preview
   const [customerId, setCustomerId] = useState<string | null>(null)
+  const [detecting, setDetecting] = useState(false)
   const photoRef = useRef<HTMLInputElement>(null)
+
+  // Reads a File into a raw base64 string (no data: URL prefix) for the AI labeling API.
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '')
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
 
   // Load customer ID on mount for storage path
   useEffect(() => {
@@ -104,10 +115,35 @@ export default function AddItemsPage() {
       // Remove the preview if upload failed
       setPhotoThumbs(prev => prev.slice(0, -1))
       setError('Photo upload failed. Please try again.')
-    } finally {
       setUploading(false)
-      // Reset input so same file can be selected again
       if (photoRef.current) photoRef.current.value = ''
+      return
+    }
+    setUploading(false)
+    if (photoRef.current) photoRef.current.value = ''
+
+    // Ask Claude what's in the photo — non-blocking, manual entry still works if it fails
+    setDetecting(true)
+    try {
+      const imageBase64 = await fileToBase64(file)
+      const res = await fetch('/api/ai-label', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64, mimeType: file.type }),
+      })
+      const data = await res.json()
+      if (res.ok && Array.isArray(data.items) && data.items.length > 0) {
+        const detected: DetectedItem[] = data.items.map((label: string) => ({
+          id: crypto.randomUUID(),
+          label,
+          ai_generated: true,
+        }))
+        setItems(prev => [...prev.filter(i => i.label.trim()), ...detected])
+      }
+    } catch {
+      // AI labeling is a convenience — silently fall back to manual entry
+    } finally {
+      setDetecting(false)
     }
   }
 
@@ -193,6 +229,9 @@ export default function AddItemsPage() {
           <div className="space-y-2">
             {items.map((item, idx) => (
               <div key={item.id} className="flex items-center gap-2">
+                {item.ai_generated && (
+                  <span className="text-xs flex-shrink-0" title="Detected from photo">✨</span>
+                )}
                 <input
                   type="text"
                   value={item.label}
@@ -209,6 +248,13 @@ export default function AddItemsPage() {
               </div>
             ))}
           </div>
+
+          {detecting && (
+            <div className="flex items-center gap-2 text-xs text-brand-blue bg-brand-blue/5 rounded-lg px-3 py-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Detecting items from photo…
+            </div>
+          )}
 
           <button
             onClick={addItem}
