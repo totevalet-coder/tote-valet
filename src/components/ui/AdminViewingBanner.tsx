@@ -3,24 +3,40 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShieldCheck, X } from 'lucide-react'
-import { getViewAsRole, clearViewAsRole } from '@/lib/adminViewAs'
+import { createClient } from '@/lib/supabase/client'
+import { clearViewAsRole } from '@/lib/adminViewAs'
 
-export default function AdminViewingBanner() {
+interface Props {
+  // The portal this banner is rendered inside — always shown for admins,
+  // regardless of how they got here (View As picker or direct navigation).
+  portal: 'customer' | 'driver' | 'warehouse' | 'sorter'
+}
+
+export default function AdminViewingBanner({ portal }: Props) {
   const router = useRouter()
-  const [role, setRole] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
-    setRole(getViewAsRole())
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('role')
+        .eq('auth_id', data.user.id)
+        .single()
+      if (customer?.role === 'admin') setIsAdmin(true)
+    })
   }, [])
 
-  if (!role) return null
+  if (!isAdmin) return null
 
   function handleBack() {
     clearViewAsRole()
     router.push('/admin')
   }
 
-  const label = role.charAt(0).toUpperCase() + role.slice(1)
+  const label = portal.charAt(0).toUpperCase() + portal.slice(1)
 
   return (
     <div className="sticky top-0 z-50 bg-orange-500 px-4 py-2 flex items-center gap-2">

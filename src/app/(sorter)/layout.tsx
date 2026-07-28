@@ -41,7 +41,7 @@ export default function SorterLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center">
       <div className="w-full max-w-[430px] relative">
-        <AdminViewingBanner />
+        <AdminViewingBanner portal="sorter" />
         <header className="sticky top-0 z-30 bg-brand-navy px-5 py-4 flex items-center justify-between shadow-md">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
