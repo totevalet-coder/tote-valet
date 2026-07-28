@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, Loader2 } from 'lucide-react'
+import type { UserRole } from '@/types/database'
 
 const ROLES = [
   { value: 'driver',    label: '🚐 Driver',    desc: 'Delivery routes & stop scans' },
@@ -35,7 +36,7 @@ export default function NewStaffPage() {
       email: form.email,
       phone: form.phone || null,
       status: 'active',
-      role: form.role,
+      role: form.role as UserRole,
       monthly_total: 0,
       free_exchanges_used: 0,
       joined_date: new Date().toISOString().split('T')[0],

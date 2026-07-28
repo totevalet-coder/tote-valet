@@ -168,8 +168,6 @@ function ScanStoreContent() {
     setScannedTote(null)
     setToteError('')
     setBinError('')
-    setToteScan('')
-    setBinScan('')
     setDoneInfo(null)
     setQuickStowTote(null)
     loadUnstowed()

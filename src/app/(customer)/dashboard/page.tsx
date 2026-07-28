@@ -89,9 +89,9 @@ export default function DashboardPage() {
         .order('preferred_date', { ascending: true }),
     ])
 
-    setPendingDeliveries(deliveriesRes.data ?? [])
-    setPendingPickups(pickupsRes.data ?? [])
-    setPendingReturns(returnsRes.data ?? [])
+    setPendingDeliveries((deliveriesRes.data ?? []).map(d => ({ ...d, quantity: d.quantity ?? 0, preferred_date: d.preferred_date ?? '' })))
+    setPendingPickups((pickupsRes.data ?? []).map(p => ({ ...p, tote_ids: p.tote_ids ?? [], preferred_date: p.preferred_date ?? '' })))
+    setPendingReturns((returnsRes.data ?? []).map(r => ({ ...r, tote_ids: r.tote_ids ?? [], preferred_date: r.preferred_date ?? '' })))
 
     const totes = totesRes.data
     if (totes) {

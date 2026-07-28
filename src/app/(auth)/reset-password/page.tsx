@@ -43,7 +43,10 @@ function ResetPasswordForm() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data: customer } = await supabase.from('customers').select('role').eq('auth_id', user.id).single()
-        const dest = { admin: '/admin', driver: '/driver', warehouse: '/warehouse', sorter: '/sorter' }[customer?.role ?? ''] ?? '/dashboard'
+        const ROLE_HOME: Record<string, string> = {
+          admin: '/admin', driver: '/driver', warehouse: '/warehouse', sorter: '/sorter', customer: '/dashboard',
+        }
+        const dest = ROLE_HOME[customer?.role ?? 'customer'] ?? '/dashboard'
         setTimeout(() => router.push(dest), 2000)
       } else {
         setTimeout(() => router.push('/dashboard'), 2000)

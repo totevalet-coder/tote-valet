@@ -88,7 +88,7 @@ export default function AdminHomePage() {
     const nameMap: Record<string, string> = {}
     ;(customers ?? []).forEach(c => { nameMap[c.id] = c.name })
 
-    const binMap: Record<string, { tote_id: string; customer_name: string; status: string }[]> = {}
+    const binMap: Record<string, { tote_id: string; customer_name: string; status: 'pending' | 'picked' }[]> = {}
     for (const tote of totes) {
       const bin = tote.bin_location ?? 'UNASSIGNED'
       if (!binMap[bin]) binMap[bin] = []

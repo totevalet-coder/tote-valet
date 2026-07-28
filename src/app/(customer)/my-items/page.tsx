@@ -17,14 +17,14 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react'
-import type { Tote } from '@/types/database'
+import type { Tote, ToteItem } from '@/types/database'
 
 type FilterPill = 'all' | 'stored' | 'empty_at_customer' | 'in_transit'
 type Tab = 'browse' | 'pickup' | 'return'
 
-interface ToteWithPickup extends Tote {
-  pickup_requested?: boolean
-}
+// `items` is a nullable jsonb column; totes are normalized to a non-null
+// array as soon as they enter this component's state (see loadTotes).
+type NormalizedTote = Tote & { items: ToteItem[] }
 
 const FILTER_PILLS: { key: FilterPill; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -39,14 +39,14 @@ function MyItemsContent() {
   const supabase = createClient()
 
   const [tab, setTab] = useState<Tab>('browse')
-  const [totes, setTotes] = useState<ToteWithPickup[]>([])
+  const [totes, setTotes] = useState<NormalizedTote[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterPill>(
     (searchParams.get('filter') as FilterPill) ?? 'all'
   )
   const [homeSubFilter, setHomeSubFilter] = useState<'all' | 'full' | 'empty'>('all')
-  const [selectedTote, setSelectedTote] = useState<ToteWithPickup | null>(null)
+  const [selectedTote, setSelectedTote] = useState<NormalizedTote | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [signedUrls, setSignedUrls] = useState<string[]>([])
   const [loadingPhotos, setLoadingPhotos] = useState(false)
@@ -93,14 +93,14 @@ function MyItemsContent() {
         .from('totes').select('*').eq('customer_id', customer.id)
         .order('created_at', { ascending: false })
 
-      setTotes((data as ToteWithPickup[]) ?? [])
+      setTotes(((data as Tote[]) ?? []).map(t => ({ ...t, items: t.items ?? [] })))
       setLoading(false)
     }
     loadTotes()
   }, [supabase, router])
 
-  async function loadSignedUrls(tote: ToteWithPickup) {
-    const paths = (tote as Tote & { photo_urls?: string[] }).photo_urls ?? []
+  async function loadSignedUrls(tote: NormalizedTote) {
+    const paths = tote.photo_urls ?? []
     if (paths.length === 0) { setSignedUrls([]); return }
     setLoadingPhotos(true)
     try {
@@ -118,8 +118,8 @@ function MyItemsContent() {
     }
   }
 
-  async function loadConfirmUrls(tote: ToteWithPickup) {
-    const paths = (tote as Tote & { photo_urls?: string[] }).photo_urls ?? []
+  async function loadConfirmUrls(tote: NormalizedTote) {
+    const paths = tote.photo_urls ?? []
     if (paths.length === 0) { setConfirmUrls([]); return }
     setConfirmLoadingUrls(true)
     try {
@@ -147,7 +147,7 @@ function MyItemsContent() {
     if (firstTote) loadConfirmUrls(firstTote)
   }
 
-  function confirmAdvance(pickupTotesArr: ToteWithPickup[]) {
+  function confirmAdvance(pickupTotesArr: NormalizedTote[]) {
     const next = confirmIdx + 1
     setConfirmChangeMode(null)
     setConfirmRemoveSelected(new Set())
@@ -159,13 +159,13 @@ function MyItemsContent() {
     }
   }
 
-  async function handleConfirmRemoveSave(toteId: string, pickupTotesArr: ToteWithPickup[]) {
+  async function handleConfirmRemoveSave(toteId: string, pickupTotesArr: NormalizedTote[]) {
     setConfirmSaving(true)
     const tote = totes.find(t => t.id === toteId)
     if (!tote) { setConfirmSaving(false); return }
     const newItems = tote.items.filter((_, i) => !confirmRemoveSelected.has(i))
     await supabase.from('totes').update({ items: newItems }).eq('id', toteId)
-    const updated = { ...tote, items: newItems } as ToteWithPickup
+    const updated = { ...tote, items: newItems }
     setTotes(prev => prev.map(t => t.id === toteId ? updated : t))
     setConfirmRemoveSelected(new Set())
     setConfirmChangeMode(null)

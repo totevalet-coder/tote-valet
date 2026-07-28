@@ -29,9 +29,11 @@ function getToteEmoji(id: string) {
 }
 
 export default function ToteCard({ tote, onClick }: ToteCardProps) {
+  const items = tote.items ?? []
+
   // For totes at home, show Full vs Empty based on whether items are logged
   const effectiveStatus =
-    tote.status === 'empty_at_customer' && tote.items.length > 0
+    tote.status === 'empty_at_customer' && items.length > 0
       ? 'full_at_customer'
       : tote.status
 
@@ -41,8 +43,8 @@ export default function ToteCard({ tote, onClick }: ToteCardProps) {
     text: 'text-gray-600',
   }
 
-  const itemPreview = tote.items.slice(0, 3).map(i => i.label).join(', ')
-  const extraItems = tote.items.length > 3 ? ` +${tote.items.length - 3} more` : ''
+  const itemPreview = items.slice(0, 3).map(i => i.label).join(', ')
+  const extraItems = items.length > 3 ? ` +${items.length - 3} more` : ''
 
   return (
     <button
@@ -68,7 +70,7 @@ export default function ToteCard({ tote, onClick }: ToteCardProps) {
         </div>
 
         <p className="text-xs text-gray-400 truncate">
-          {tote.items.length === 0
+          {items.length === 0
             ? 'No items logged'
             : `${itemPreview}${extraItems}`}
         </p>

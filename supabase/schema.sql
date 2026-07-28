@@ -39,7 +39,8 @@ create type tote_status as enum (
 create type route_status as enum (
   'planned',
   'in_progress',
-  'complete'
+  'complete',
+  'returning'
 );
 
 create type pick_list_status as enum (
@@ -325,17 +326,18 @@ create policy "errors_driver_insert" on errors
 -- MIGRATIONS (run these in Supabase SQL editor after initial schema setup)
 -- ============================================================
 
--- Added for grace period billing logic (Section 11.1):
--- Tracks when a tote became empty_at_customer so the 8-day grace period can be applied.
+-- ✅ Done — empty_since (grace period billing, Section 11.1). Confirmed live in schema May 2026.
 -- ALTER TABLE totes ADD COLUMN IF NOT EXISTS empty_since timestamptz;
 
--- Added for pickup requests from customer app:
+-- ✅ Done — pickup_requested (customer pickup requests). Confirmed live in schema May 2026.
 -- ALTER TABLE totes ADD COLUMN IF NOT EXISTS pickup_requested boolean not null default false;
 
--- Added for route returning status (driver drop-off flow):
+-- ✅ Done — route_status 'returning' value (driver drop-off flow). Applied 2026-07-27.
 -- ALTER TYPE route_status ADD VALUE IF NOT EXISTS 'returning';
 
--- tote_requests table (structured customer requests from the app):
+-- ✅ Done — tote_requests table (structured customer requests from the app).
+-- Confirmed live in schema May 2026. Live table also has an `admin_notes text` column
+-- not reflected below — add it here if you ever recreate this table from scratch.
 -- CREATE TABLE IF NOT EXISTS tote_requests (
 --   id              uuid primary key default uuid_generate_v4(),
 --   customer_id     uuid not null references customers(id) on delete cascade,
@@ -344,6 +346,7 @@ create policy "errors_driver_insert" on errors
 --   tote_ids        text[] not null default '{}',
 --   preferred_date  date,
 --   status          text not null default 'pending' check (status in ('pending', 'acknowledged', 'complete')),
+--   admin_notes     text,
 --   created_at      timestamptz not null default now(),
 --   updated_at      timestamptz not null default now()
 -- );

@@ -39,7 +39,7 @@ export default function RequestTotesPage() {
         .eq('type', 'empty_tote_delivery')
         .eq('status', 'pending')
         .order('preferred_date', { ascending: true })
-      setPendingDeliveries(data ?? [])
+      setPendingDeliveries((data ?? []).map(d => ({ ...d, quantity: d.quantity ?? 0, preferred_date: d.preferred_date ?? '' })))
     }
     loadPending()
   }, [supabase])
@@ -78,7 +78,7 @@ export default function RequestTotesPage() {
         .eq('type', 'empty_tote_delivery')
         .eq('status', 'pending')
         .order('preferred_date', { ascending: true })
-      setPendingDeliveries(refreshed ?? [])
+      setPendingDeliveries((refreshed ?? []).map(d => ({ ...d, quantity: d.quantity ?? 0, preferred_date: d.preferred_date ?? '' })))
 
       setDone(true)
     } catch (err: unknown) {

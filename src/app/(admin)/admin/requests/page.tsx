@@ -60,7 +60,7 @@ export default function AdminRequestsPage() {
     }))
 
     const tReqs: ToteRequest[] = (requestsRes.data ?? []).map((r: {
-      id: string; type: string; quantity: number | null; tote_ids: string[];
+      id: string; type: string; quantity: number | null; tote_ids: string[] | null;
       preferred_date: string | null; customer_id: string;
       customers: { name: string; address: string | null } | null
     }) => ({
