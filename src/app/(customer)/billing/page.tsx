@@ -141,7 +141,7 @@ export default function BillingPage() {
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(22)
     doc.setFont('helvetica', 'bold')
-    doc.text('TOTE VALET', 40, 35)
+    doc.text('STORAGE VALET', 40, 35)
 
     doc.setFontSize(9)
     doc.setFont('helvetica', 'normal')
@@ -257,9 +257,9 @@ export default function BillingPage() {
     doc.setTextColor(180, 200, 230)
     doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
-    doc.text('Thank you for choosing Tote Valet  ·  hello@totevalet.com  ·  (610) 555-0100', 306, 754, { align: 'center' })
+    doc.text('Thank you for choosing Storage Valet  ·  hello@totevalet.com  ·  (610) 555-0100', 306, 754, { align: 'center' })
 
-    doc.save(`ToteValet-Invoice-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}.pdf`)
+    doc.save(`StorageValet-Invoice-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}.pdf`)
   }
 
   return (

@@ -65,7 +65,7 @@ export default function LoginPage() {
           <div className="w-20 h-20 bg-white rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg">
             <span className="text-brand-navy text-3xl font-black">TV</span>
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Tote Valet</h1>
+          <h1 className="text-3xl font-black text-white tracking-tight">Storage Valet</h1>
           <p className="text-brand-blue text-sm mt-2 font-medium">
             We Pick Up, Transport, Store and Deliver.
           </p>

@@ -76,8 +76,8 @@
   <path d="M21 65 L31 77 L52 50" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
 
   <!-- ── WORDMARK ── -->
-  <text x="107" y="57" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="34" fill="#003087" letter-spacing="1">TOTE</text>
-  <text x="107" y="93" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="34" fill="#00A0DF" letter-spacing="1">VALET</text>
+  <text x="107" y="52" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="26" fill="#003087" letter-spacing="0.5">STORAGE</text>
+  <text x="107" y="88" font-family="'Arial Black', 'Arial', sans-serif" font-weight="900" font-size="30" fill="#00A0DF" letter-spacing="1">VALET</text>
   <!-- Divider line -->
   <line x1="107" y1="65" x2="315" y2="65" stroke="#003087" stroke-width="1.5" opacity="0.12"/>
 </svg>

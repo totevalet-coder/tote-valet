@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       payment_method: customer.card_on_file,
       confirm: true,
       off_session: true,
-      description: `Tote Valet monthly storage — ${customer.name}`,
+      description: `Storage Valet monthly storage — ${customer.name}`,
     })
 
     if (paymentIntent.status === 'succeeded') {

@@ -33,7 +33,7 @@ export async function POST(request: Request) {
             },
             {
               type: 'text',
-              text: `You are a storage inventory assistant for Tote Valet, a tote storage service.
+              text: `You are a storage inventory assistant for Storage Valet, a tote storage service.
 
 Look at this photo of items that need to be stored in a tote.
 Identify each distinct item or category of items visible in the image.

@@ -417,7 +417,7 @@ function MyItemsContent() {
               onClick={() => { setSelectedTote(null); setTab('pickup'); setPickupMode('return_empties'); setEmptyReturnSelected(new Set([selectedTote.id])) }}
               className="btn-primary w-full"
             >
-              Return This Tote to Tote Valet
+              Return This Tote to Storage Valet
             </button>
           )
         )}

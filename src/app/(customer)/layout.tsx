@@ -141,7 +141,7 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
             <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
               <span className="text-brand-navy text-xs font-black">TV</span>
             </div>
-            <span className="text-white font-black text-lg tracking-tight">Tote Valet</span>
+            <span className="text-white font-black text-lg tracking-tight">Storage Valet</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-white/80 text-sm font-medium mr-1">

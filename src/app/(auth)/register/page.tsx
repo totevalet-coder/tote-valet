@@ -352,7 +352,7 @@ function RegisterForm() {
               </div>
               <h2 className="text-2xl font-black text-brand-navy mb-2">You&apos;re all set!</h2>
               <p className="text-gray-500 text-sm mb-2">
-                Welcome to Tote Valet, <strong>{data.name.split(' ')[0] || 'there'}</strong>!
+                Welcome to Storage Valet, <strong>{data.name.split(' ')[0] || 'there'}</strong>!
               </p>
               <p className="text-gray-400 text-xs mb-6">
                 Your first pickup is scheduled for{' '}

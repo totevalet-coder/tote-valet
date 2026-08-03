@@ -195,7 +195,7 @@ function SettingsContent() {
                     const res = await fetch('/api/send-sms', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ to: testPhone, message: 'Tote Valet: This is a test message from your admin panel. SMS is working correctly! 📦' }),
+                      body: JSON.stringify({ to: testPhone, message: 'Storage Valet: This is a test message from your admin panel. SMS is working correctly! 📦' }),
                     })
                     const data = await res.json()
                     if (res.ok) {

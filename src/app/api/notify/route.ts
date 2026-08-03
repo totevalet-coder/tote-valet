@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
         try {
           const client = twilio(sid, token)
           await client.messages.create({
-            body: `Tote Valet: ${body}`,
+            body: `Storage Valet: ${body}`,
             from,
             to: customer.phone,
           })

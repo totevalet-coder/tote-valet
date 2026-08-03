@@ -5,13 +5,13 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Tote Valet',
+  title: 'Storage Valet',
   description: 'We Pick Up, Transport, Store and Deliver.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Tote Valet',
+    title: 'Storage Valet',
   },
 }
 

@@ -106,7 +106,7 @@ export default function LandingPage() {
       {/* ── NAV ── */}
       <nav className="fixed top-0 inset-x-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-100">
         <div className="max-w-5xl mx-auto px-5 h-20 flex items-center justify-between">
-          <Image src="/logo.svg" alt="Tote Valet" width={180} height={68} priority />
+          <Image src="/logo.svg" alt="Storage Valet" width={180} height={68} priority />
           <div className="flex items-center gap-3">
             <Link href="/login" className="text-sm font-semibold text-brand-navy hover:text-brand-blue transition-colors px-4 py-2">
               Log In
@@ -129,7 +129,7 @@ export default function LandingPage() {
         <div className="relative max-w-2xl mx-auto text-center">
           {/* Hero logo */}
           <div className="flex justify-center mb-6">
-            <Image src="/logo.svg" alt="Tote Valet" width={280} height={106} className="drop-shadow-lg" priority />
+            <Image src="/logo.svg" alt="Storage Valet" width={280} height={106} className="drop-shadow-lg" priority />
           </div>
 
           <div className="inline-flex items-center gap-2 bg-white/15 text-white text-xs font-semibold px-4 py-2 rounded-full mb-6 backdrop-blur-sm">
@@ -177,7 +177,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
             <p className="text-brand-blue font-bold text-sm uppercase tracking-widest mb-2">Simple Process</p>
-            <h2 className="text-3xl sm:text-4xl font-black text-brand-navy">How Tote Valet Works</h2>
+            <h2 className="text-3xl sm:text-4xl font-black text-brand-navy">How Storage Valet Works</h2>
             <p className="text-gray-500 mt-3 max-w-lg mx-auto">Four easy steps between a cluttered home and clean, organized storage.</p>
           </div>
 
@@ -326,13 +326,13 @@ export default function LandingPage() {
       {/* ── FOOTER ── */}
       <footer className="bg-brand-navy border-t border-white/10 px-5 py-10">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
-          <Image src="/logo.svg" alt="Tote Valet" width={160} height={60} className="brightness-0 invert opacity-80" />
+          <Image src="/logo.svg" alt="Storage Valet" width={160} height={60} className="brightness-0 invert opacity-80" />
           <div className="flex gap-6 text-blue-300 text-sm">
             <Link href="/login" className="hover:text-white transition-colors">Log In</Link>
             <Link href="/register" className="hover:text-white transition-colors">Sign Up</Link>
             <a href="mailto:hello@totevalet.com" className="hover:text-white transition-colors">Contact</a>
           </div>
-          <p className="text-blue-400 text-xs">© {new Date().getFullYear()} Tote Valet. All rights reserved.</p>
+          <p className="text-blue-400 text-xs">© {new Date().getFullYear()} Storage Valet. All rights reserved.</p>
         </div>
       </footer>
 

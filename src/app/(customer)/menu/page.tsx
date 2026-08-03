@@ -48,7 +48,7 @@ export default function MenuPage() {
         </div>
         <div>
           <p className="text-white font-black text-lg leading-tight">{userName}</p>
-          <p className="text-white/50 text-xs mt-0.5">Tote Valet Customer</p>
+          <p className="text-white/50 text-xs mt-0.5">Storage Valet Customer</p>
         </div>
       </div>
 
