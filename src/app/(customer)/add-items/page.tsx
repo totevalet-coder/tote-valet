@@ -23,17 +23,18 @@ interface DetectedItem {
   ai_generated: boolean
 }
 
-type WorkflowStep = 'items' | 'details' | 'done'
+type WorkflowStep = 'tote' | 'items' | 'done'
 
 export default function AddItemsPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  const [step, setStep] = useState<WorkflowStep>('items')
+  const [step, setStep] = useState<WorkflowStep>('tote')
   const [items, setItems] = useState<DetectedItem[]>([{ id: crypto.randomUUID(), label: '', ai_generated: false }])
   const [toteName, setToteName] = useState('')
   const [barcodeValue, setBarcodeValue] = useState('')
   const [existingToteName, setExistingToteName] = useState<string | null>(null) // null = new tote, string = existing
+  const [existingItems, setExistingItems] = useState<ToteItem[]>([]) // current inventory of a scanned/looked-up tote
   const [lookingUp, setLookingUp] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -65,17 +66,21 @@ export default function AddItemsPage() {
     load()
   }, [])
 
-  // When a barcode is entered/scanned, look it up in the DB
+  // When a barcode is entered/scanned, look it up in the DB — including
+  // current contents, so the customer can see what's already in there
+  // (or that it's empty) before adding anything new.
   async function lookupTote(id: string) {
     const trimmed = id.trim().toUpperCase()
-    if (!trimmed) { setExistingToteName(null); return }
+    if (!trimmed) { setExistingToteName(null); setExistingItems([]); return }
     setLookingUp(true)
-    const { data } = await supabase.from('totes').select('tote_name').eq('id', trimmed).maybeSingle()
+    const { data } = await supabase.from('totes').select('tote_name, items').eq('id', trimmed).maybeSingle()
     if (data?.tote_name) {
       setExistingToteName(data.tote_name)
       setToteName(data.tote_name)
+      setExistingItems((data.items as ToteItem[] | null) ?? [])
     } else {
       setExistingToteName(null)
+      setExistingItems([])
     }
     setLookingUp(false)
   }
@@ -208,8 +213,8 @@ export default function AddItemsPage() {
     <div className="px-5 pt-6 pb-24 space-y-5">
 
       {/* Back button */}
-      {step === 'details' && (
-        <button onClick={() => setStep('items')} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
+      {step === 'items' && (
+        <button onClick={() => setStep('tote')} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
           <ChevronLeft className="w-5 h-5" /> Back
         </button>
       )}
@@ -218,7 +223,102 @@ export default function AddItemsPage() {
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
       )}
 
-      {/* ── STEP 1: Items ── */}
+      {/* ── STEP 1: Which Tote ── */}
+      {step === 'tote' && (
+        <div className="space-y-4">
+          <div>
+            <h1 className="text-2xl font-black text-brand-navy">Which tote?</h1>
+            <p className="text-gray-500 text-sm mt-1">Scan or enter the tote barcode first, so we can show you what&apos;s already inside.</p>
+          </div>
+
+          {/* Barcode / ID entry */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Tote Barcode / ID <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <BarcodeScanInput
+              placeholder="TV-0001  or  leave blank for new tote"
+              onScan={async val => {
+                setBarcodeValue(val)
+                await lookupTote(val)
+              }}
+            />
+            {barcodeValue && (
+              <div className="mt-3 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-green-600 font-medium">Tote ID captured</p>
+                  <p className="text-lg font-black text-green-700 tracking-wider">{barcodeValue}</p>
+                </div>
+              </div>
+            )}
+            {lookingUp && (
+              <p className="text-xs text-gray-400 mt-2">Looking up tote…</p>
+            )}
+          </div>
+
+          {/* Existing tote found — show name + current inventory */}
+          {existingToteName ? (
+            <>
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-4 flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-bold text-green-800">Tote found: &ldquo;{existingToteName}&rdquo;</p>
+                  <p className="text-xs text-green-600">New items will be added to this tote</p>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm font-bold text-gray-700 mb-2">
+                  Currently in this tote {existingItems.length > 0 && `(${existingItems.length})`}
+                </p>
+                {existingItems.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {existingItems.map((it, i) => (
+                      <li key={i} className="text-sm text-gray-600 flex items-center gap-2">
+                        <span className="w-1 h-1 rounded-full bg-gray-400 flex-shrink-0" /> {it.label}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">This tote is empty.</p>
+                )}
+              </div>
+            </>
+          ) : (
+            /* No match (or nothing scanned yet) — new tote, ask for a nickname */
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Tote Nickname <span className="text-gray-400 font-normal">(new tote)</span>
+              </label>
+              <input
+                type="text"
+                value={toteName}
+                onChange={e => setToteName(e.target.value)}
+                placeholder="e.g. Winter Clothes, Holiday Decor..."
+                className="input-field"
+              />
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {['Winter Clothes', 'Holiday Decor', 'Sports Gear', 'Books', 'Kitchen'].map(s => (
+                  <button key={s} onClick={() => setToteName(s)}
+                    className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-brand-blue/10 hover:text-brand-blue transition-colors">
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => setStep('items')}
+            className="btn-primary w-full"
+          >
+            Continue
+          </button>
+        </div>
+      )}
+
+      {/* ── STEP 2: Items ── */}
       {step === 'items' && (
         <div className="space-y-4">
           <div>
@@ -307,86 +407,6 @@ export default function AddItemsPage() {
             <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoCapture} />
           </div>
 
-          <button
-            onClick={() => {
-              if (items.filter(i => i.label.trim()).length === 0) {
-                setError('Add at least one item.')
-                return
-              }
-              setError(null)
-              setStep('details')
-            }}
-            className="btn-primary w-full"
-          >
-            Continue
-          </button>
-        </div>
-      )}
-
-      {/* ── STEP 2: Tote Details ── */}
-      {step === 'details' && (
-        <div className="space-y-4">
-          <div>
-            <h1 className="text-2xl font-black text-brand-navy">Which tote?</h1>
-            <p className="text-gray-500 text-sm mt-1">Scan or enter the tote barcode to link these items.</p>
-          </div>
-
-          {/* Barcode / ID entry */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Tote Barcode / ID <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <BarcodeScanInput
-              placeholder="TV-0001  or  leave blank for new tote"
-              onScan={async val => {
-                setBarcodeValue(val)
-                await lookupTote(val)
-              }}
-            />
-            {barcodeValue && (
-              <div className="mt-3 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-                <div>
-                  <p className="text-xs text-green-600 font-medium">Tote ID captured</p>
-                  <p className="text-lg font-black text-green-700 tracking-wider">{barcodeValue}</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Existing tote found — show name, no input needed */}
-          {existingToteName ? (
-            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-4 flex items-center gap-3">
-              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-green-800">Tote found: &ldquo;{existingToteName}&rdquo;</p>
-                <p className="text-xs text-green-600">Items will be added to this tote</p>
-              </div>
-            </div>
-          ) : (
-            /* New tote — ask for nickname */
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Tote Nickname <span className="text-gray-400 font-normal">(new tote)</span>
-              </label>
-              <input
-                type="text"
-                value={toteName}
-                onChange={e => setToteName(e.target.value)}
-                placeholder="e.g. Winter Clothes, Holiday Decor..."
-                className="input-field"
-              />
-              <div className="flex gap-2 mt-2 flex-wrap">
-                {['Winter Clothes', 'Holiday Decor', 'Sports Gear', 'Books', 'Kitchen'].map(s => (
-                  <button key={s} onClick={() => setToteName(s)}
-                    className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-brand-blue/10 hover:text-brand-blue transition-colors">
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
             <div className="flex justify-between">
               <span className="text-gray-500">Items to add</span>
@@ -400,7 +420,18 @@ export default function AddItemsPage() {
             </div>
           </div>
 
-          <button onClick={handleSave} disabled={saving} className="btn-primary w-full flex items-center justify-center gap-2">
+          <button
+            onClick={() => {
+              if (items.filter(i => i.label.trim()).length === 0) {
+                setError('Add at least one item.')
+                return
+              }
+              setError(null)
+              handleSave()
+            }}
+            disabled={saving}
+            className="btn-primary w-full flex items-center justify-center gap-2"
+          >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             Save Items
           </button>
@@ -423,11 +454,12 @@ export default function AddItemsPage() {
           <div className="space-y-3">
             <button
               onClick={() => {
-                setStep('items')
+                setStep('tote')
                 setItems([{ id: crypto.randomUUID(), label: '', ai_generated: false }])
                 setToteName('')
                 setBarcodeValue('')
                 setExistingToteName(null)
+                setExistingItems([])
                 setPhotoPaths([])
                 setPhotoThumbs([])
                 setError(null)
