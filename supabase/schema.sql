@@ -57,6 +57,34 @@ create type error_type as enum (
 );
 
 -- ============================================================
+-- SECTION 4.0 — REGIONS TABLE
+-- One row per service area (Lehigh Valley today, more as we
+-- expand/franchise). Every customer/tote/bin/route/etc. row
+-- carries a region_id so queries can filter to a single region
+-- and RLS can eventually enforce it at the DB level.
+-- ============================================================
+
+create table regions (
+  id          uuid primary key default uuid_generate_v4(),
+  name        text not null,               -- e.g. "Lehigh Valley"
+  slug        text not null unique,        -- e.g. "lehigh-valley"
+  created_at  timestamptz not null default now()
+);
+
+insert into regions (name, slug) values ('Lehigh Valley', 'lehigh-valley');
+
+-- Returns the current default region's id. Used as the column
+-- default below so existing insert code doesn't need to change
+-- while there's only one region.
+create or replace function get_default_region_id()
+returns uuid
+language sql
+stable
+as $$
+  select id from regions where slug = 'lehigh-valley' limit 1;
+$$;
+
+-- ============================================================
 -- SECTION 4.1 — CUSTOMERS TABLE
 -- ============================================================
 
@@ -73,6 +101,7 @@ create table customers (
   free_exchanges_used int not null default 0,    -- Resets annually
   joined_date     date not null default current_date,
   notes           text,                          -- Admin notes field
+  region_id       uuid not null default get_default_region_id() references regions(id),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -83,6 +112,7 @@ alter table customers add column auth_id uuid unique references auth.users(id) o
 create index idx_customers_email on customers(email);
 create index idx_customers_auth_id on customers(auth_id);
 create index idx_customers_status on customers(status);
+create index idx_customers_region_id on customers(region_id);
 
 -- ============================================================
 -- SECTION 4.2 — TOTES TABLE
@@ -98,6 +128,7 @@ create table totes (
   bin_location    text,                           -- e.g. A-12, null if not stored
   last_scan_date  timestamptz,
   items           jsonb default '[]'::jsonb,      -- Array of { label, photo_url?, ai_generated? }
+  region_id       uuid not null default get_default_region_id() references regions(id),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -106,6 +137,7 @@ create index idx_totes_customer_id on totes(customer_id);
 create index idx_totes_status on totes(status);
 create index idx_totes_bin_location on totes(bin_location);
 create index idx_totes_seal_number on totes(seal_number);
+create index idx_totes_region_id on totes(region_id);
 
 -- ============================================================
 -- SECTION 4.3 — BINS TABLE
@@ -116,10 +148,12 @@ create table bins (
   row             char(1) not null,               -- e.g. A, B, C for pick list optimization
   capacity        int not null default 10,        -- Max totes
   current_count   int not null default 0,         -- Computed from totes table
-  notes           text                            -- Admin notes
+  notes           text,                           -- Admin notes
+  region_id       uuid not null default get_default_region_id() references regions(id)
 );
 
 create index idx_bins_row on bins(row);
+create index idx_bins_region_id on bins(region_id);
 
 -- ============================================================
 -- SECTION 4.4 — ROUTES TABLE
@@ -136,6 +170,7 @@ create table routes (
   completed_at          timestamptz,
   force_complete_count  int not null default 0,    -- For admin reporting
   error_count           int not null default 0,    -- Total errors on this route
+  region_id             uuid not null default get_default_region_id() references regions(id),
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()
 );
@@ -143,6 +178,7 @@ create table routes (
 create index idx_routes_driver_id on routes(driver_id);
 create index idx_routes_date on routes(date);
 create index idx_routes_status on routes(status);
+create index idx_routes_region_id on routes(region_id);
 
 -- ============================================================
 -- SECTION 4.5 — PICK LISTS TABLE
@@ -158,12 +194,14 @@ create table pick_lists (
   -- Ordered array of bins with tote arrays, sorted alphanumerically A→B→C
   -- Each entry: { bin_id, totes: [{ tote_id, customer_name, status: 'pending'|'picked' }] }
   completed_at    timestamptz,
+  region_id       uuid not null default get_default_region_id() references regions(id),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
 
 create index idx_pick_lists_status on pick_lists(status);
 create index idx_pick_lists_assigned_to on pick_lists(assigned_to);
+create index idx_pick_lists_region_id on pick_lists(region_id);
 
 -- ============================================================
 -- SECTION 4.6 — ERRORS TABLE
@@ -182,6 +220,7 @@ create table errors (
   admin_notes     text,
   resolved        boolean not null default false,
   resolved_by     uuid references customers(id) on delete set null,
+  region_id       uuid not null default get_default_region_id() references regions(id),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -190,6 +229,7 @@ create index idx_errors_type on errors(type);
 create index idx_errors_driver_id on errors(driver_id);
 create index idx_errors_route_id on errors(route_id);
 create index idx_errors_resolved on errors(resolved);
+create index idx_errors_region_id on errors(region_id);
 
 -- ============================================================
 -- AUTO-UPDATE updated_at TIMESTAMPS
@@ -249,6 +289,7 @@ create trigger totes_sync_bin_count after update on totes
 -- ROW LEVEL SECURITY (RLS)
 -- ============================================================
 
+alter table regions enable row level security;
 alter table customers enable row level security;
 alter table totes enable row level security;
 alter table bins enable row level security;
@@ -265,6 +306,17 @@ stable
 as $$
   select role::text from customers where auth_id = auth.uid() limit 1;
 $$;
+
+-- Regions: any authenticated user can read the list (needed for
+-- signup/region pickers); only admins can add/edit regions.
+create policy "regions_read_all" on regions
+  for select using (auth.uid() is not null);
+
+create policy "regions_admin_write" on regions
+  for insert with check (get_my_role() = 'admin');
+
+create policy "regions_admin_update" on regions
+  for update using (get_my_role() = 'admin');
 
 -- Customers: self read/insert/update + admin all
 create policy "customers_self_read" on customers
@@ -334,6 +386,60 @@ create policy "errors_driver_insert" on errors
 
 -- ✅ Done — route_status 'returning' value (driver drop-off flow). Applied 2026-07-27.
 -- ALTER TYPE route_status ADD VALUE IF NOT EXISTS 'returning';
+
+-- ✅ Done — regions table + region_id everywhere (multi-region/franchise
+-- readiness). Applied 2026-08-03. Written against the LIVE schema, which
+-- already had these tables without region_id — safe to re-run (all IF NOT EXISTS).
+-- CREATE TABLE IF NOT EXISTS regions (
+--   id          uuid primary key default uuid_generate_v4(),
+--   name        text not null,
+--   slug        text not null unique,
+--   created_at  timestamptz not null default now()
+-- );
+--
+-- INSERT INTO regions (name, slug)
+--   SELECT 'Lehigh Valley', 'lehigh-valley'
+--   WHERE NOT EXISTS (SELECT 1 FROM regions WHERE slug = 'lehigh-valley');
+--
+-- CREATE OR REPLACE FUNCTION get_default_region_id()
+-- RETURNS uuid LANGUAGE sql STABLE AS $$
+--   SELECT id FROM regions WHERE slug = 'lehigh-valley' LIMIT 1;
+-- $$;
+--
+-- ALTER TABLE customers  ADD COLUMN IF NOT EXISTS region_id uuid REFERENCES regions(id);
+-- ALTER TABLE totes      ADD COLUMN IF NOT EXISTS region_id uuid REFERENCES regions(id);
+-- ALTER TABLE bins       ADD COLUMN IF NOT EXISTS region_id uuid REFERENCES regions(id);
+-- ALTER TABLE routes     ADD COLUMN IF NOT EXISTS region_id uuid REFERENCES regions(id);
+-- ALTER TABLE pick_lists ADD COLUMN IF NOT EXISTS region_id uuid REFERENCES regions(id);
+-- ALTER TABLE errors     ADD COLUMN IF NOT EXISTS region_id uuid REFERENCES regions(id);
+--
+-- UPDATE customers  SET region_id = get_default_region_id() WHERE region_id IS NULL;
+-- UPDATE totes      SET region_id = get_default_region_id() WHERE region_id IS NULL;
+-- UPDATE bins       SET region_id = get_default_region_id() WHERE region_id IS NULL;
+-- UPDATE routes     SET region_id = get_default_region_id() WHERE region_id IS NULL;
+-- UPDATE pick_lists SET region_id = get_default_region_id() WHERE region_id IS NULL;
+-- UPDATE errors     SET region_id = get_default_region_id() WHERE region_id IS NULL;
+--
+-- ALTER TABLE customers  ALTER COLUMN region_id SET NOT NULL, ALTER COLUMN region_id SET DEFAULT get_default_region_id();
+-- ALTER TABLE totes      ALTER COLUMN region_id SET NOT NULL, ALTER COLUMN region_id SET DEFAULT get_default_region_id();
+-- ALTER TABLE bins       ALTER COLUMN region_id SET NOT NULL, ALTER COLUMN region_id SET DEFAULT get_default_region_id();
+-- ALTER TABLE routes     ALTER COLUMN region_id SET NOT NULL, ALTER COLUMN region_id SET DEFAULT get_default_region_id();
+-- ALTER TABLE pick_lists ALTER COLUMN region_id SET NOT NULL, ALTER COLUMN region_id SET DEFAULT get_default_region_id();
+-- ALTER TABLE errors     ALTER COLUMN region_id SET NOT NULL, ALTER COLUMN region_id SET DEFAULT get_default_region_id();
+--
+-- CREATE INDEX IF NOT EXISTS idx_customers_region_id  ON customers(region_id);
+-- CREATE INDEX IF NOT EXISTS idx_totes_region_id      ON totes(region_id);
+-- CREATE INDEX IF NOT EXISTS idx_bins_region_id       ON bins(region_id);
+-- CREATE INDEX IF NOT EXISTS idx_routes_region_id     ON routes(region_id);
+-- CREATE INDEX IF NOT EXISTS idx_pick_lists_region_id ON pick_lists(region_id);
+-- CREATE INDEX IF NOT EXISTS idx_errors_region_id     ON errors(region_id);
+--
+-- ALTER TABLE regions ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY "regions_read_all" ON regions FOR SELECT USING (auth.uid() IS NOT NULL);
+-- CREATE POLICY "regions_admin_write" ON regions FOR INSERT WITH CHECK (get_my_role() = 'admin');
+-- CREATE POLICY "regions_admin_update" ON regions FOR UPDATE USING (get_my_role() = 'admin');
+--
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.regions TO authenticated;
 
 -- ✅ Done — tote_requests table (structured customer requests from the app).
 -- Confirmed live in schema May 2026. Live table also has an `admin_notes text` column

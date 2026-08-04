@@ -20,6 +20,7 @@ export type Database = {
           current_count: number
           id: string
           notes: string | null
+          region_id: string
           row: string
         }
         Insert: {
@@ -27,6 +28,7 @@ export type Database = {
           current_count?: number
           id: string
           notes?: string | null
+          region_id?: string
           row: string
         }
         Update: {
@@ -34,9 +36,18 @@ export type Database = {
           current_count?: number
           id?: string
           notes?: string | null
+          region_id?: string
           row?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "bins_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       customers: {
         Row: {
@@ -52,6 +63,7 @@ export type Database = {
           name: string
           notes: string | null
           phone: string | null
+          region_id: string
           role: Database["public"]["Enums"]["user_role"]
           status: Database["public"]["Enums"]["account_status"]
           stripe_customer_id: string | null
@@ -70,6 +82,7 @@ export type Database = {
           name: string
           notes?: string | null
           phone?: string | null
+          region_id?: string
           role?: Database["public"]["Enums"]["user_role"]
           status?: Database["public"]["Enums"]["account_status"]
           stripe_customer_id?: string | null
@@ -88,12 +101,21 @@ export type Database = {
           name?: string
           notes?: string | null
           phone?: string | null
+          region_id?: string
           role?: Database["public"]["Enums"]["user_role"]
           status?: Database["public"]["Enums"]["account_status"]
           stripe_customer_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "customers_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       errors: {
         Row: {
@@ -104,6 +126,7 @@ export type Database = {
           driver_notes: string | null
           error_code: string | null
           id: string
+          region_id: string
           resolved: boolean
           resolved_by: string | null
           route_id: string | null
@@ -120,6 +143,7 @@ export type Database = {
           driver_notes?: string | null
           error_code?: string | null
           id: string
+          region_id?: string
           resolved?: boolean
           resolved_by?: string | null
           route_id?: string | null
@@ -136,6 +160,7 @@ export type Database = {
           driver_notes?: string | null
           error_code?: string | null
           id?: string
+          region_id?: string
           resolved?: boolean
           resolved_by?: string | null
           route_id?: string | null
@@ -145,6 +170,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "errors_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "errors_driver_id_fkey"
             columns: ["driver_id"]
@@ -222,6 +254,7 @@ export type Database = {
           generated_at: string
           generated_by: string
           id: string
+          region_id: string
           status: Database["public"]["Enums"]["pick_list_status"]
           updated_at: string
         }
@@ -233,6 +266,7 @@ export type Database = {
           generated_at?: string
           generated_by: string
           id: string
+          region_id?: string
           status?: Database["public"]["Enums"]["pick_list_status"]
           updated_at?: string
         }
@@ -244,10 +278,18 @@ export type Database = {
           generated_at?: string
           generated_by?: string
           id?: string
+          region_id?: string
           status?: Database["public"]["Enums"]["pick_list_status"]
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "pick_lists_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "pick_lists_assigned_to_fkey"
             columns: ["assigned_to"]
@@ -273,6 +315,7 @@ export type Database = {
           error_count: number
           force_complete_count: number
           id: string
+          region_id: string
           status: Database["public"]["Enums"]["route_status"]
           stops: RouteStop[]
           updated_at: string
@@ -285,6 +328,7 @@ export type Database = {
           error_count?: number
           force_complete_count?: number
           id: string
+          region_id?: string
           status?: Database["public"]["Enums"]["route_status"]
           stops?: RouteStop[]
           updated_at?: string
@@ -297,11 +341,19 @@ export type Database = {
           error_count?: number
           force_complete_count?: number
           id?: string
+          region_id?: string
           status?: Database["public"]["Enums"]["route_status"]
           stops?: RouteStop[]
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "routes_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "routes_driver_id_fkey"
             columns: ["driver_id"]
@@ -370,6 +422,7 @@ export type Database = {
           photo_url: string | null
           photo_urls: string[] | null
           pickup_requested: boolean | null
+          region_id: string
           seal_number: string | null
           status: Database["public"]["Enums"]["tote_status"]
           tote_name: string | null
@@ -386,6 +439,7 @@ export type Database = {
           photo_url?: string | null
           photo_urls?: string[] | null
           pickup_requested?: boolean | null
+          region_id?: string
           seal_number?: string | null
           status?: Database["public"]["Enums"]["tote_status"]
           tote_name?: string | null
@@ -402,6 +456,7 @@ export type Database = {
           photo_url?: string | null
           photo_urls?: string[] | null
           pickup_requested?: boolean | null
+          region_id?: string
           seal_number?: string | null
           status?: Database["public"]["Enums"]["tote_status"]
           tote_name?: string | null
@@ -415,7 +470,35 @@ export type Database = {
             referencedRelation: "customers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "totes_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      regions: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          slug?: string
+        }
+        Relationships: []
       }
     }
     Views: {
@@ -656,3 +739,4 @@ export type ToteError = Database['public']['Tables']['errors']['Row']
 export type Tote = Database['public']['Tables']['totes']['Row']
 export type Route = Database['public']['Tables']['routes']['Row']
 export type PickList = Database['public']['Tables']['pick_lists']['Row']
+export type Region = Database['public']['Tables']['regions']['Row']
