@@ -35,7 +35,7 @@ export default function AddItemsPage() {
   const [barcodeValue, setBarcodeValue] = useState('')
   const [existingToteName, setExistingToteName] = useState<string | null>(null) // null = new tote, string = existing
   const [existingItems, setExistingItems] = useState<ToteItem[]>([]) // current inventory of a scanned/looked-up tote
-  const [existingPhotoPaths, setExistingPhotoPaths] = useState<string[]>([]) // storage paths for that tote's existing photos
+  const [existingPhotoUrls, setExistingPhotoUrls] = useState<string[]>([]) // signed URLs for that tote's existing photos
   const [lookingUp, setLookingUp] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -72,25 +72,34 @@ export default function AddItemsPage() {
   // (or that it's empty) before adding anything new.
   async function lookupTote(id: string) {
     const trimmed = id.trim().toUpperCase()
-    if (!trimmed) { setExistingToteName(null); setExistingItems([]); setExistingPhotoPaths([]); return }
+    if (!trimmed) { setExistingToteName(null); setExistingItems([]); setExistingPhotoUrls([]); return }
     setLookingUp(true)
     const { data } = await supabase.from('totes').select('tote_name, items, photo_urls').eq('id', trimmed).maybeSingle()
     if (data?.tote_name) {
       setExistingToteName(data.tote_name)
       setToteName(data.tote_name)
       setExistingItems((data.items as ToteItem[] | null) ?? [])
-      setExistingPhotoPaths((data.photo_urls as string[] | null) ?? [])
+      await loadExistingPhotoUrls((data.photo_urls as string[] | null) ?? [])
     } else {
       setExistingToteName(null)
       setExistingItems([])
-      setExistingPhotoPaths([])
+      setExistingPhotoUrls([])
     }
     setLookingUp(false)
   }
 
-  // tote-photos bucket is public-read, so a stored path resolves straight to a viewable URL.
-  function getExistingPhotoUrl(path: string) {
-    return supabase.storage.from('tote-photos').getPublicUrl(path).data.publicUrl
+  // tote-photos is a private bucket (matches the pattern already used in
+  // my-items) — resolve each stored path to a short-lived signed URL rather
+  // than relying on a public read, which this bucket doesn't actually allow.
+  async function loadExistingPhotoUrls(paths: string[]) {
+    if (paths.length === 0) { setExistingPhotoUrls([]); return }
+    const urls = await Promise.all(
+      paths.map(async (path) => {
+        const { data } = await supabase.storage.from('tote-photos').createSignedUrl(path, 3600)
+        return data?.signedUrl ?? null
+      })
+    )
+    setExistingPhotoUrls(urls.filter((u): u is string => !!u))
   }
 
   function addItem() {
@@ -294,14 +303,14 @@ export default function AddItemsPage() {
                   )}
                 </div>
 
-                {existingPhotoPaths.length > 0 && (
+                {existingPhotoUrls.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-gray-500 mb-1.5">Photos</p>
                     <div className="flex gap-2 flex-wrap">
-                      {existingPhotoPaths.map((path, i) => (
+                      {existingPhotoUrls.map((url, i) => (
                         <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={getExistingPhotoUrl(path)} alt={`Existing photo ${i + 1}`} className="w-full h-full object-cover" />
+                          <img src={url} alt={`Existing photo ${i + 1}`} className="w-full h-full object-cover" />
                         </div>
                       ))}
                     </div>
@@ -484,7 +493,7 @@ export default function AddItemsPage() {
                 setBarcodeValue('')
                 setExistingToteName(null)
                 setExistingItems([])
-                setExistingPhotoPaths([])
+                setExistingPhotoUrls([])
                 setPhotoPaths([])
                 setPhotoThumbs([])
                 setError(null)

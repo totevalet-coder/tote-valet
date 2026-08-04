@@ -172,9 +172,8 @@ Claude API suggests item names from tote photos. Lives at `api/ai-label/`. Uses 
 ---
 
 ## Storage Buckets (Supabase)
-- `tote-photos` — public read, authenticated write
-- `seal-photos` — public read, authenticated write
-- `invoice-pdfs` — private, authenticated read
+- `tote-photos` — **actually private** (verified against live project 2026-08-04, corrected from this doc's previous "public read" note, which was wrong). Photos are accessed via short-lived signed URLs (`createSignedUrl`, 1hr expiry) — see `my-items/page.tsx` and `add-items/page.tsx`. Do not use `getPublicUrl()` on this bucket, it will silently produce broken image URLs.
+- `seal-photos`, `invoice-pdfs` — **do not exist yet** on the live project (verified 2026-08-04). No code references them either, so nothing is currently broken by their absence — this was aspirational/planned documentation that never got built. Create them (and decide public vs. private + RLS) before writing any code that uses them.
 
 ---
 
