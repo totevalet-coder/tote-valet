@@ -35,6 +35,7 @@ export default function AddItemsPage() {
   const [barcodeValue, setBarcodeValue] = useState('')
   const [existingToteName, setExistingToteName] = useState<string | null>(null) // null = new tote, string = existing
   const [existingItems, setExistingItems] = useState<ToteItem[]>([]) // current inventory of a scanned/looked-up tote
+  const [existingPhotoPaths, setExistingPhotoPaths] = useState<string[]>([]) // storage paths for that tote's existing photos
   const [lookingUp, setLookingUp] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -71,18 +72,25 @@ export default function AddItemsPage() {
   // (or that it's empty) before adding anything new.
   async function lookupTote(id: string) {
     const trimmed = id.trim().toUpperCase()
-    if (!trimmed) { setExistingToteName(null); setExistingItems([]); return }
+    if (!trimmed) { setExistingToteName(null); setExistingItems([]); setExistingPhotoPaths([]); return }
     setLookingUp(true)
-    const { data } = await supabase.from('totes').select('tote_name, items').eq('id', trimmed).maybeSingle()
+    const { data } = await supabase.from('totes').select('tote_name, items, photo_urls').eq('id', trimmed).maybeSingle()
     if (data?.tote_name) {
       setExistingToteName(data.tote_name)
       setToteName(data.tote_name)
       setExistingItems((data.items as ToteItem[] | null) ?? [])
+      setExistingPhotoPaths((data.photo_urls as string[] | null) ?? [])
     } else {
       setExistingToteName(null)
       setExistingItems([])
+      setExistingPhotoPaths([])
     }
     setLookingUp(false)
+  }
+
+  // tote-photos bucket is public-read, so a stored path resolves straight to a viewable URL.
+  function getExistingPhotoUrl(path: string) {
+    return supabase.storage.from('tote-photos').getPublicUrl(path).data.publicUrl
   }
 
   function addItem() {
@@ -268,20 +276,36 @@ export default function AddItemsPage() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-sm font-bold text-gray-700 mb-2">
-                  Currently in this tote {existingItems.length > 0 && `(${existingItems.length})`}
-                </p>
-                {existingItems.length > 0 ? (
-                  <ul className="space-y-1.5">
-                    {existingItems.map((it, i) => (
-                      <li key={i} className="text-sm text-gray-600 flex items-center gap-2">
-                        <span className="w-1 h-1 rounded-full bg-gray-400 flex-shrink-0" /> {it.label}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">This tote is empty.</p>
+              <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-bold text-gray-700 mb-2">
+                    Currently in this tote {existingItems.length > 0 && `(${existingItems.length})`}
+                  </p>
+                  {existingItems.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {existingItems.map((it, i) => (
+                        <li key={i} className="text-sm text-gray-600 flex items-center gap-2">
+                          <span className="w-1 h-1 rounded-full bg-gray-400 flex-shrink-0" /> {it.label}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">This tote is empty.</p>
+                  )}
+                </div>
+
+                {existingPhotoPaths.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1.5">Photos</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {existingPhotoPaths.map((path, i) => (
+                        <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={getExistingPhotoUrl(path)} alt={`Existing photo ${i + 1}`} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             </>
@@ -460,6 +484,7 @@ export default function AddItemsPage() {
                 setBarcodeValue('')
                 setExistingToteName(null)
                 setExistingItems([])
+                setExistingPhotoPaths([])
                 setPhotoPaths([])
                 setPhotoThumbs([])
                 setError(null)
