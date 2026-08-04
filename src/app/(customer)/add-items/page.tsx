@@ -177,11 +177,11 @@ export default function AddItemsPage() {
       const toteId = barcodeValue.trim() || `TV-${Math.floor(1000 + Math.random() * 9000)}`
       const toteItems: ToteItem[] = validItems.map(({ label, ai_generated }) => ({ label, ai_generated }))
 
-      const { data: existing } = await supabase.from('totes').select('id, items').eq('id', toteId).single()
+      const { data: existing } = await supabase.from('totes').select('id, items, photo_urls').eq('id', toteId).single()
 
       if (existing) {
         const merged = [...(existing.items as ToteItem[]), ...toteItems]
-        const existingPaths = (existing as { photo_urls?: string[] }).photo_urls ?? []
+        const existingPaths = (existing.photo_urls as string[] | null) ?? []
         const mergedPaths = [...existingPaths, ...photoPaths].slice(0, MAX_PHOTOS)
         const { error: e } = await supabase.from('totes').update({
           items: merged,
