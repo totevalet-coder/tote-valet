@@ -1,6 +1,6 @@
 # Tote Valet — Claude Code Context
 *Drop this file in your repo root. Claude Code reads it automatically every session.*
-*Last updated: May 2026*
+*Last updated: August 2026*
 
 ---
 
@@ -188,3 +188,4 @@ Claude API suggests item names from tote photos. Lives at `api/ai-label/`. Uses 
 7. ~~Run Supabase GRANTs before October 30, 2026~~ ✅ Done May 29, 2026
 8. ~~Decide on and run pending schema migrations when ready~~ ✅ Done — all four confirmed/applied 2026-07-27 (see Migrations section above)
 9. AI photo labeling (`api/ai-label/`) — code is wired up and working (2026-07-27), but Anthropic account has no credit balance so it's effectively off. Add credits at console.anthropic.com when ready, OR evaluate a free on-device fallback (e.g. TensorFlow.js COCO-SSD in-browser) — tradeoff: free but much coarser generic labels vs. Claude's specific ones.
+10. **NEW (2026-08-04) — Warehouse Editor.** Admin-only tool for visually mapping the warehouse: a layout/map view of bins for easy labeling. Modeled on Excel's drag-to-fill behavior — dragging down a cell auto-increments the label sequence (e.g. Row 1, Bin 1, Shelf 1 → 1A, 1B, 1C, 1D, 1E, then Row 2, Bin 1, Shelf 1...). Not yet scoped/designed — just captured from user's description, no implementation details decided.
