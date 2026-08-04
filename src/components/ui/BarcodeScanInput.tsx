@@ -1,7 +1,8 @@
 'use client'
 
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Camera, ScanLine, X, Zap } from 'lucide-react'
+import { Camera, ScanLine, X, Zap, Aperture } from 'lucide-react'
+import type { BrowserMultiFormatReader } from '@zxing/browser'
 
 interface Props {
   onScan: (value: string) => void
@@ -10,29 +11,77 @@ interface Props {
   large?: boolean
 }
 
+// The native Shape Detection API (BarcodeDetector) isn't in TypeScript's bundled
+// DOM lib. Typed loosely and privately here instead of touching global types —
+// avoids any risk of colliding with whatever TS ships in the future.
+interface DetectedBarcode {
+  rawValue: string
+}
+interface BarcodeDetectorLike {
+  detect(source: CanvasImageSource): Promise<DetectedBarcode[]>
+}
+type BarcodeDetectorCtor = new (options: { formats: string[] }) => BarcodeDetectorLike
+
+// Broad format list — covers common 1D retail/logistics barcodes (tote labels)
+// plus QR/DataMatrix in case those ever get used. Cheap to over-include.
+const BARCODE_FORMATS = [
+  'code_128', 'code_39', 'code_93', 'codabar',
+  'ean_13', 'ean_8', 'itf', 'upc_a', 'upc_e',
+  'qr_code', 'data_matrix',
+]
+
+function getNativeDetectorCtor(): BarcodeDetectorCtor | null {
+  if (typeof window === 'undefined') return null
+  const ctor = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector
+  return ctor ?? null
+}
+
 export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manually', disabled, large }: Props) {
   const [scanning, setScanning] = useState(false)
   const [cameraError, setCameraError] = useState('')
+  const [captureError, setCaptureError] = useState('')
+  const [capturing, setCapturing] = useState(false)
   const [manualValue, setManualValue] = useState('')
   const [torchOn, setTorchOn] = useState(false)
   const [torchSupported, setTorchSupported] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const readerRef = useRef<{ reset: () => void } | null>(null)
   const trackRef = useRef<MediaStreamTrack | null>(null)
 
+  // Whichever decode engine ended up active for this scan session — used by
+  // both the live loop and the "take photo instead" fallback so they agree.
+  const engineRef = useRef<
+    | { type: 'native'; detector: BarcodeDetectorLike }
+    | { type: 'zxing'; reader: BrowserMultiFormatReader }
+    | null
+  >(null)
+  const stopEngineRef = useRef<(() => void) | null>(null)
+  const detectedRef = useRef(false)
+
   const stopScanning = useCallback(() => {
-    try { readerRef.current?.reset() } catch { /* ignore */ }
-    readerRef.current = null
+    try { stopEngineRef.current?.() } catch { /* ignore */ }
+    stopEngineRef.current = null
+    engineRef.current = null
     trackRef.current = null
+    detectedRef.current = false
     setTorchOn(false)
     setTorchSupported(false)
+    setCaptureError('')
     setScanning(false)
   }, [])
+
+  const finishWithResult = useCallback((text: string) => {
+    if (detectedRef.current) return
+    detectedRef.current = true
+    if (navigator.vibrate) navigator.vibrate(80)
+    stopScanning()
+    onScan(text.trim().toUpperCase())
+  }, [onScan, stopScanning])
 
   useEffect(() => {
     if (!scanning) return
     let active = true
     let stream: MediaStream | null = null
+    let rafId: number | null = null
 
     async function init() {
       try {
@@ -50,17 +99,54 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
         trackRef.current = track ?? null
 
         if (track) {
-          // Enable continuous autofocus
           try {
             await track.applyConstraints({
               advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
             })
           } catch { /* ignore */ }
 
-          // Check torch support
           const caps = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean }
           if (caps.torch) setTorchSupported(true)
         }
+
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+
+        // Try the phone's native, hardware-accelerated scanner first — much
+        // faster/more reliable than a JS decoder where it's available
+        // (mainly Android Chrome; iOS Safari doesn't support it yet, and
+        // will just fall through to the ZXing path below).
+        const NativeDetector = getNativeDetectorCtor()
+        if (NativeDetector) {
+          try {
+            const detector = new NativeDetector({ formats: BARCODE_FORMATS })
+            // Probe it actually works before committing to this path.
+            await detector.detect(videoRef.current)
+            if (!active) return
+
+            engineRef.current = { type: 'native', detector }
+            stopEngineRef.current = () => { if (rafId !== null) cancelAnimationFrame(rafId) }
+
+            const tick = async () => {
+              if (!active || detectedRef.current) return
+              try {
+                const results = await detector.detect(videoRef.current!)
+                if (results.length > 0) {
+                  finishWithResult(results[0].rawValue)
+                  return
+                }
+              } catch { /* transient per-frame errors are normal, keep going */ }
+              rafId = requestAnimationFrame(tick)
+            }
+            rafId = requestAnimationFrame(tick)
+            return
+          } catch {
+            // Native detector present but not actually functional (happens on
+            // some desktop/older Chrome builds) — fall through to ZXing.
+          }
+        }
+
+        if (!active) return
 
         const { BrowserMultiFormatReader } = await import('@zxing/browser')
         const { DecodeHintType } = await import('@zxing/library')
@@ -69,14 +155,14 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
         hints.set(DecodeHintType.TRY_HARDER, true)
 
         const reader = new BrowserMultiFormatReader(hints)
-        readerRef.current = reader as unknown as { reset: () => void }
+        engineRef.current = { type: 'zxing', reader }
 
-        await reader.decodeFromStream(stream, videoRef.current, (result) => {
+        const controls = await reader.decodeFromStream(stream, videoRef.current, (result) => {
           if (!active || !result) return
-          if (navigator.vibrate) navigator.vibrate(80)
-          stopScanning()
-          onScan(result.getText().trim().toUpperCase())
+          finishWithResult(result.getText())
         })
+        if (!active) { controls.stop(); return }
+        stopEngineRef.current = () => controls.stop()
       } catch {
         if (!active) return
         setCameraError('Camera access denied. Enter the ID manually below.')
@@ -88,12 +174,15 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
 
     return () => {
       active = false
-      try { readerRef.current?.reset() } catch { /* ignore */ }
-      readerRef.current = null
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      try { stopEngineRef.current?.() } catch { /* ignore */ }
+      stopEngineRef.current = null
+      engineRef.current = null
       trackRef.current = null
       stream?.getTracks().forEach(t => t.stop())
     }
-  }, [scanning, onScan, stopScanning])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanning])
 
   async function toggleTorch() {
     if (!trackRef.current) return
@@ -104,6 +193,47 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
       })
       setTorchOn(next)
     } catch { /* ignore */ }
+  }
+
+  // "Take photo instead" — decodes one full-resolution still frame rather
+  // than racing live video. Much more forgiving than the live loop: no
+  // motion blur, no partial frames, user picks the moment.
+  async function capturePhoto() {
+    const video = videoRef.current
+    const engine = engineRef.current
+    if (!video || !engine || capturing) return
+
+    setCapturing(true)
+    setCaptureError('')
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('no-canvas-context')
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+      if (engine.type === 'native') {
+        const results = await engine.detector.detect(canvas)
+        if (results.length > 0) {
+          finishWithResult(results[0].rawValue)
+          return
+        }
+      } else {
+        try {
+          const result = engine.reader.decodeFromCanvas(canvas)
+          finishWithResult(result.getText())
+          return
+        } catch {
+          // decodeFromCanvas throws when nothing is found — fall through to the error message below.
+        }
+      }
+      setCaptureError("Couldn't find a barcode in that photo — reposition and try again, or enter the ID manually below.")
+    } catch {
+      setCaptureError('Something went wrong capturing that photo. Try again, or enter the ID manually below.')
+    } finally {
+      setCapturing(false)
+    }
   }
 
   function handleManual(e: React.FormEvent) {
@@ -146,6 +276,12 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
             Align barcode inside the box
           </p>
 
+          {captureError && (
+            <p className="relative z-10 text-red-300 text-sm text-center mt-3 px-8 max-w-sm">
+              {captureError}
+            </p>
+          )}
+
           <div className="relative z-10 mt-5 flex items-center gap-3">
             {/* Torch toggle — only shown if device supports it */}
             {torchSupported && (
@@ -161,6 +297,15 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
                 {torchOn ? 'Light On' : 'Light'}
               </button>
             )}
+
+            <button
+              onClick={capturePhoto}
+              disabled={capturing}
+              className="flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-5 py-3 rounded-full font-semibold transition-colors disabled:opacity-50"
+            >
+              <Aperture className="w-4 h-4" />
+              {capturing ? 'Reading…' : 'Take Photo'}
+            </button>
 
             <button
               onClick={stopScanning}
