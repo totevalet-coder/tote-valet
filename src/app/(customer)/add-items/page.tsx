@@ -7,13 +7,14 @@ import {
   Camera,
   Loader2,
   Plus,
-  Trash2,
   ChevronLeft,
   CheckCircle2,
   X,
 } from 'lucide-react'
 import type { ToteItem } from '@/types/database'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
+import ToteItemRow from '@/components/ui/ToteItemRow'
+import { detectItemsFromPhoto } from '@/lib/aiLabel'
 
 const MAX_PHOTOS = 5
 
@@ -21,6 +22,7 @@ interface DetectedItem {
   id: string
   label: string
   ai_generated: boolean
+  accepted: boolean // false only for an AI-suggested label the customer hasn't confirmed yet
 }
 
 type WorkflowStep = 'tote' | 'items' | 'done'
@@ -30,7 +32,7 @@ export default function AddItemsPage() {
   const supabase = createClient()
 
   const [step, setStep] = useState<WorkflowStep>('tote')
-  const [items, setItems] = useState<DetectedItem[]>([{ id: crypto.randomUUID(), label: '', ai_generated: false }])
+  const [items, setItems] = useState<DetectedItem[]>([{ id: crypto.randomUUID(), label: '', ai_generated: false, accepted: true }])
   const [toteName, setToteName] = useState('')
   const [barcodeValue, setBarcodeValue] = useState('')
   const [existingToteName, setExistingToteName] = useState<string | null>(null) // null = new tote, string = existing
@@ -45,16 +47,6 @@ export default function AddItemsPage() {
   const [customerId, setCustomerId] = useState<string | null>(null)
   const [detecting, setDetecting] = useState(false)
   const photoRef = useRef<HTMLInputElement>(null)
-
-  // Reads a File into a raw base64 string (no data: URL prefix) for the AI labeling API.
-  function fileToBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '')
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
 
   // Load customer ID on mount for storage path
   useEffect(() => {
@@ -103,11 +95,15 @@ export default function AddItemsPage() {
   }
 
   function addItem() {
-    setItems(prev => [...prev, { id: crypto.randomUUID(), label: '', ai_generated: false }])
+    setItems(prev => [...prev, { id: crypto.randomUUID(), label: '', ai_generated: false, accepted: true }])
   }
 
   function updateItem(id: string, label: string) {
     setItems(prev => prev.map(i => i.id === id ? { ...i, label } : i))
+  }
+
+  function acceptItem(id: string) {
+    setItems(prev => prev.map(i => i.id === id ? { ...i, accepted: true } : i))
   }
 
   function removeItem(id: string) {
@@ -146,27 +142,17 @@ export default function AddItemsPage() {
 
     // Ask Claude what's in the photo — non-blocking, manual entry still works if it fails
     setDetecting(true)
-    try {
-      const imageBase64 = await fileToBase64(file)
-      const res = await fetch('/api/ai-label', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, mimeType: file.type }),
-      })
-      const data = await res.json()
-      if (res.ok && Array.isArray(data.items) && data.items.length > 0) {
-        const detected: DetectedItem[] = data.items.map((label: string) => ({
-          id: crypto.randomUUID(),
-          label,
-          ai_generated: true,
-        }))
-        setItems(prev => [...prev.filter(i => i.label.trim()), ...detected])
-      }
-    } catch {
-      // AI labeling is a convenience — silently fall back to manual entry
-    } finally {
-      setDetecting(false)
+    const labels = await detectItemsFromPhoto(file)
+    if (labels.length > 0) {
+      const detected: DetectedItem[] = labels.map((label) => ({
+        id: crypto.randomUUID(),
+        label,
+        ai_generated: true,
+        accepted: false, // needs an explicit Accept before it's treated as confirmed
+      }))
+      setItems(prev => [...prev.filter(i => i.label.trim()), ...detected])
     }
+    setDetecting(false)
   }
 
   function removePhoto(idx: number) {
@@ -361,24 +347,17 @@ export default function AddItemsPage() {
 
           <div className="space-y-2">
             {items.map((item, idx) => (
-              <div key={item.id} className="flex items-center gap-2">
-                {item.ai_generated && (
-                  <span className="text-xs flex-shrink-0" title="Detected from photo">✨</span>
-                )}
-                <input
-                  type="text"
-                  value={item.label}
-                  onChange={e => updateItem(item.id, e.target.value)}
-                  placeholder={`Item ${idx + 1}`}
-                  className="input-field flex-1"
-                  autoFocus={idx === items.length - 1 && idx > 0}
-                />
-                {items.length > 1 && (
-                  <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-600">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
+              <ToteItemRow
+                key={item.id}
+                label={item.label}
+                aiGenerated={item.ai_generated}
+                needsAccept={item.ai_generated && !item.accepted}
+                onLabelChange={label => updateItem(item.id, label)}
+                onAccept={() => acceptItem(item.id)}
+                onRemove={items.length > 1 ? () => removeItem(item.id) : undefined}
+                placeholder={`Item ${idx + 1}`}
+                autoFocus={idx === items.length - 1 && idx > 0}
+              />
             ))}
           </div>
 
@@ -492,7 +471,7 @@ export default function AddItemsPage() {
             <button
               onClick={() => {
                 setStep('tote')
-                setItems([{ id: crypto.randomUUID(), label: '', ai_generated: false }])
+                setItems([{ id: crypto.randomUUID(), label: '', ai_generated: false, accepted: true }])
                 setToteName('')
                 setBarcodeValue('')
                 setExistingToteName(null)
