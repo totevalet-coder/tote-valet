@@ -17,6 +17,10 @@ const FAQS = [
     a: 'Tap "+ Add Items to Tote" from the dashboard. You can take a photo, scan a barcode, or type items manually. Items are saved to your tote record.',
   },
   {
+    q: 'Can I edit or remove items from a tote after adding them?',
+    a: 'Yes — as long as the tote is still at your home, whether it\'s empty or already has items in it, you can edit its contents: add, rename, or remove items and photos anytime. You can also rename the tote itself whenever you like, even after it\'s picked up. Once a tote leaves your home, its contents become read-only to match what our team verifies in the warehouse — to change what\'s inside, request the tote be returned, and you\'ll be able to edit it again once it\'s back.',
+  },
+  {
     q: 'What does the seal number mean?',
     a: 'Each tote is sealed with a tamper-evident sticker before storage. The seal number is recorded so we can verify the tote hasn\'t been opened. Your driver will check this on delivery.',
   },

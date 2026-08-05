@@ -88,6 +88,10 @@ const FAQS = [
     a: 'Open the app, go to My Items, select the totes you want returned, and pick a preferred delivery date. We\'ll confirm and deliver.',
   },
   {
+    q: 'Can I change what\'s in a tote after I\'ve listed it?',
+    a: 'Yes, anytime it\'s still at your home — add, remove, or edit items and photos freely, and rename the tote whenever you like. Once it\'s picked up, the contents lock in to match what we\'ve verified; just request the tote back if you need to make changes, and you can edit it again once it\'s home.',
+  },
+  {
     q: 'Is my stuff insured?',
     a: 'Yes — all stored items are covered under our storage insurance policy. Details are available in your account.',
   },
