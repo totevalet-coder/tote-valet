@@ -46,7 +46,9 @@ function MyItemsContent() {
   const [filter, setFilter] = useState<FilterPill>(
     (searchParams.get('filter') as FilterPill) ?? 'all'
   )
-  const [homeSubFilter, setHomeSubFilter] = useState<'all' | 'full' | 'empty'>('all')
+  const [homeSubFilter, setHomeSubFilter] = useState<'all' | 'full' | 'empty'>(
+    (searchParams.get('sub') as 'all' | 'full' | 'empty') ?? 'all'
+  )
   const [selectedTote, setSelectedTote] = useState<NormalizedTote | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [signedUrls, setSignedUrls] = useState<string[]>([])

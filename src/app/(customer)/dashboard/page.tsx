@@ -167,14 +167,14 @@ export default function DashboardPage() {
                 value={stats.fullAtHome}
                 emoji="📦"
                 colorClass="text-brand-navy"
-                onClick={() => router.push('/my-items?filter=empty_at_customer')}
+                onClick={() => router.push('/my-items?filter=empty_at_customer&sub=full')}
               />
               <StatBox
                 label="Empty Totes at Home"
                 value={stats.emptyAtHome}
                 emoji="🗃️"
                 colorClass="text-gray-500"
-                onClick={() => router.push('/my-items?filter=empty_at_customer')}
+                onClick={() => router.push('/my-items?filter=empty_at_customer&sub=empty')}
               />
             </div>
           </div>
