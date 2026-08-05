@@ -118,7 +118,7 @@ export default function AddItemsPage() {
   async function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (photoPaths.length >= MAX_PHOTOS) { setError(`Maximum ${MAX_PHOTOS} photos allowed.`); return }
+    if (existingPhotoUrls.length + photoPaths.length >= MAX_PHOTOS) { setError(`${MAX_PHOTOS} photo limit per tote.`); return }
     if (!customerId) { setError('Not logged in.'); return }
 
     // Show local preview immediately
@@ -399,8 +399,8 @@ export default function AddItemsPage() {
           {/* Photos */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-gray-700">Photos <span className="text-gray-400 font-normal">(optional, up to {MAX_PHOTOS})</span></p>
-              <p className="text-xs text-gray-400">{photoPaths.length}/{MAX_PHOTOS}</p>
+              <p className="text-sm font-semibold text-gray-700">Photos <span className="text-gray-400 font-normal">(optional, up to {MAX_PHOTOS} per tote)</span></p>
+              <p className="text-xs text-gray-400">{existingPhotoUrls.length + photoPaths.length}/{MAX_PHOTOS}</p>
             </div>
 
             {/* Thumbnails */}
@@ -427,7 +427,7 @@ export default function AddItemsPage() {
               </div>
             )}
 
-            {photoPaths.length < MAX_PHOTOS && (
+            {existingPhotoUrls.length + photoPaths.length < MAX_PHOTOS ? (
               <button
                 onClick={() => photoRef.current?.click()}
                 disabled={uploading}
@@ -436,6 +436,10 @@ export default function AddItemsPage() {
                 {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-6 h-6" />}
                 {uploading ? 'Uploading…' : photoThumbs.length === 0 ? 'Take Photo of Contents' : 'Add Another Photo'}
               </button>
+            ) : (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-center">
+                {MAX_PHOTOS} photo limit per tote.
+              </p>
             )}
             <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoCapture} />
           </div>
