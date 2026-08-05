@@ -182,6 +182,13 @@ Claude API suggests item names from tote photos. Lives at `api/ai-label/`. Uses 
 
 ---
 
+## Project Status (2026-08-05)
+**Customer portal considered feature-complete** per user — as far as it can go until they're ready to go live, targeted **~1-2 weeks out** from 2026-08-05. Remaining open items on the customer side (TODO #11 final verification, #14 OAuth bug, #6/#5 landing polish, #12 training video) are known and tracked below, not blockers to this call — user's explicit read is there's nothing left worth doing on the customer portal *right now*.
+
+**Work is moving to admin and warehouse/operations screens next.** See Portals & Pages above for what's already scoped there (Admin: Dashboard, Customers, Staff, Routes, Totes, Requests, Monitor, Billing, Settings, Errors; Warehouse: Dashboard, Scan & Store, Sort, Pick Lists, Reports) and TODOs #1-3 and #10 below for known gaps in that area.
+
+---
+
 ## Known Outstanding TODOs
 1. Warehouse portal — Add "Sort" under Quick Actions
 2. Warehouse portal — Add "Sort" under Reports
