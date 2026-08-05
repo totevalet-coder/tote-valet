@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   CheckCircle2,
   X,
-  Lock,
 } from 'lucide-react'
 import type { ToteItem, ToteStatus } from '@/types/database'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
@@ -292,15 +291,6 @@ export default function EditTotePage() {
             <h1 className="text-2xl font-black text-brand-navy">{toteName || toteId}</h1>
             <p className="text-gray-400 text-xs mt-1">{toteId}</p>
           </div>
-
-          {!editable && (
-            <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
-              <Lock className="w-4 h-4 text-gray-400 flex-shrink-0" />
-              <p className="text-xs text-gray-500">
-                This tote has left your home, so its contents are read-only. You can still rename it. Request a return to make other changes.
-              </p>
-            </div>
-          )}
 
           {/* Name — always editable, regardless of status */}
           <div>
