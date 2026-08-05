@@ -226,14 +226,18 @@ function MyItemsContent() {
       await supabase.from('totes').update({ pickup_requested: true }).in('id', ids)
       setTotes(prev => prev.map(t => ids.includes(t.id) ? { ...t, pickup_requested: true } : t))
 
-      // Create tote_request record
-      await supabase.from('tote_requests').insert({
+      // Create tote_request record. type: 'pickup' covers totes with items
+      // heading to storage AND empty totes heading back to the warehouse —
+      // full-vs-empty is derived from each tote's current item count
+      // wherever it's displayed, not stored as a separate request type.
+      const { error: e } = await supabase.from('tote_requests').insert({
         customer_id: customer.id,
         type: 'pickup',
         tote_ids: ids,
         preferred_date: pickupDate,
         status: 'pending',
       })
+      if (e) throw e
 
       setPickupStep('done')
     } catch {
@@ -257,13 +261,18 @@ function MyItemsContent() {
       await supabase.from('totes').update({ pickup_requested: true }).in('id', ids)
       setTotes(prev => prev.map(t => ids.includes(t.id) ? { ...t, pickup_requested: true } : t))
 
-      await supabase.from('tote_requests').insert({
+      // type: 'pickup', same as handleRequestPickup — this is the same
+      // physical operation (driver collects totes from the customer), just
+      // with empty totes instead of full ones. No separate stored type;
+      // empty-vs-full is derived from item count where it's displayed.
+      const { error: e } = await supabase.from('tote_requests').insert({
         customer_id: customer.id,
-        type: 'empty_tote_return',
+        type: 'pickup',
         tote_ids: ids,
         preferred_date: emptyReturnDate,
         status: 'pending',
       })
+      if (e) throw e
 
       setEmptyReturnStep('done')
     } catch {
@@ -294,13 +303,17 @@ function MyItemsContent() {
 
       const ids = Array.from(returnSelected)
       await supabase.from('totes').update({ status: 'pending_pick' }).in('id', ids)
-      await supabase.from('tote_requests').insert({
+      // type: 'full_tote_delivery' — renamed from 'tote_return', which read as
+      // ambiguous about direction (totes going TO the warehouse, or FROM it?).
+      // This one delivers stored totes back to the customer.
+      const { error: e } = await supabase.from('tote_requests').insert({
         customer_id: customer.id,
-        type: 'tote_return',
+        type: 'full_tote_delivery',
         tote_ids: ids,
         preferred_date: deliveryDate,
         status: 'pending',
       })
+      if (e) throw e
 
       setReturnStep('done')
     } catch {

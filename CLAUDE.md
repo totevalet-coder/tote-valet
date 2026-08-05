@@ -153,6 +153,17 @@ Any new table you create also needs a matching GRANT or supabase-js won't see it
 - ✅ `totes.pickup_requested` — already live
 - ✅ `tote_requests` table — already live (also has an `admin_notes` column not previously documented)
 - ✅ `route_status` enum: `returning` value — applied 2026-07-27
+- ⚠️ **NOT YET APPLIED** — `tote_requests.type` constraint simplification, decided 2026-08-05. App code (`my-items/page.tsx`, `dashboard/page.tsx`, `admin/requests/page.tsx`) was updated to use 3 types instead of 4 (`'empty_tote_delivery' | 'pickup' | 'full_tote_delivery'` — `'empty_tote_return'` retired/folded into `'pickup'`, `'tote_return'` renamed `'full_tote_delivery'`), but the **live Supabase constraint has not been updated to match** — Claude has no direct DB/psql access this session, only the REST/anon/service-role keys, which can't run DDL. Run this in the Supabase SQL editor before relying on the new type values (safe to run even if some rows already have the old values, or if the live constraint never actually matched the old documented one):
+  ```sql
+  begin;
+  alter table tote_requests drop constraint if exists tote_requests_type_check;
+  update tote_requests set type = 'pickup' where type = 'empty_tote_return';
+  update tote_requests set type = 'full_tote_delivery' where type = 'tote_return';
+  alter table tote_requests add constraint tote_requests_type_check
+    check (type in ('empty_tote_delivery', 'full_tote_delivery', 'pickup'));
+  commit;
+  ```
+  Background: found while building the admin Orders concept mockup — `schema.sql`'s documented constraint only ever listed `('empty_tote_delivery', 'pickup')`, but app code had already drifted to insert 2 more undocumented types, with unchecked insert errors on all three calls (also fixed now — see `my-items/page.tsx`). If the live constraint really matched the stale documentation, "Return This Tote to Storage Valet" and "Request This Tote Back" may have been silently failing in production. Worth confirming the actual current live constraint before/while running the above.
 
 ### Free Tier Warning
 Project is on Supabase free tier (pre-revenue). Auto-pauses after 7 days inactivity.

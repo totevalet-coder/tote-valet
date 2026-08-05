@@ -444,10 +444,22 @@ create policy "errors_driver_insert" on errors
 -- ✅ Done — tote_requests table (structured customer requests from the app).
 -- Confirmed live in schema May 2026. Live table also has an `admin_notes text` column
 -- not reflected below — add it here if you ever recreate this table from scratch.
+--
+-- ⚠️ type column below UPDATED 2026-08-05, NOT YET APPLIED to the live constraint —
+-- see CLAUDE.md TODO for the migration SQL to run in the Supabase dashboard.
+-- Was ('empty_tote_delivery', 'pickup') only, but app code had already drifted to
+-- also insert 'empty_tote_return' and 'tote_return' (neither ever added here or to
+-- the live constraint, with unchecked insert errors — likely silently failing).
+-- Fixed by simplifying instead of just widening the constraint: 'empty_tote_return'
+-- is retired (folded into 'pickup' — full vs. empty is derived live from each tote's
+-- current item count, not stored, since a customer can edit contents after
+-- requesting pickup). 'tote_return' is renamed 'full_tote_delivery' — clearer
+-- direction (totes delivered back TO the customer; 'return' was ambiguous, also used
+-- for totes returning TO the warehouse).
 -- CREATE TABLE IF NOT EXISTS tote_requests (
 --   id              uuid primary key default uuid_generate_v4(),
 --   customer_id     uuid not null references customers(id) on delete cascade,
---   type            text not null check (type in ('empty_tote_delivery', 'pickup')),
+--   type            text not null check (type in ('empty_tote_delivery', 'full_tote_delivery', 'pickup')),
 --   quantity        int,
 --   tote_ids        text[] not null default '{}',
 --   preferred_date  date,

@@ -85,7 +85,7 @@ export default function DashboardPage() {
         .from('tote_requests')
         .select('id, tote_ids, preferred_date')
         .eq('customer_id', customer.id)
-        .eq('type', 'tote_return')
+        .eq('type', 'full_tote_delivery')
         .eq('status', 'pending')
         .order('preferred_date', { ascending: true }),
     ])

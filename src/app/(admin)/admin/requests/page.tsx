@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Truck, Package, CalendarDays, MapPin, CheckCircle2, Clock } from 'lucide-react'
+import { Truck, Package, CalendarDays, MapPin, CheckCircle2, Clock, ArrowDownToLine } from 'lucide-react'
 
 interface PickupRequest {
   toteId: string
@@ -15,13 +15,19 @@ interface PickupRequest {
 
 interface ToteRequest {
   id: string
-  type: 'empty_tote_delivery' | 'pickup'
+  type: 'empty_tote_delivery' | 'pickup' | 'full_tote_delivery'
   quantity: number | null
   toteIds: string[]
   preferredDate: string | null
   customerName: string
   customerAddress: string | null
   customerId: string
+  // Only meaningful for type 'pickup' — derived live from each tote's
+  // current item count, not stored. A pickup request can mix full totes
+  // (heading to storage) and empty ones (heading back to the warehouse);
+  // this is which of those it actually turned out to be, as of right now.
+  fullCount?: number
+  emptyCount?: number
 }
 
 export default function AdminRequestsPage() {
@@ -65,7 +71,7 @@ export default function AdminRequestsPage() {
       customers: { name: string; address: string | null } | null
     }) => ({
       id: r.id,
-      type: r.type as 'empty_tote_delivery' | 'pickup',
+      type: r.type as 'empty_tote_delivery' | 'pickup' | 'full_tote_delivery',
       quantity: r.quantity,
       toteIds: r.tote_ids ?? [],
       preferredDate: r.preferred_date,
@@ -73,6 +79,23 @@ export default function AdminRequestsPage() {
       customerAddress: r.customers?.address ?? null,
       customerId: r.customer_id,
     }))
+
+    // 'pickup' covers both full totes (heading to storage) and empty totes
+    // (heading back to the warehouse) — derive which is which from each
+    // tote's current item count rather than trusting a stored label, since
+    // a customer can edit a tote's contents after requesting the pickup.
+    const pickupToteIds = [...new Set(tReqs.filter(r => r.type === 'pickup').flatMap(r => r.toteIds))]
+    if (pickupToteIds.length > 0) {
+      const { data: toteItemsData } = await supabase.from('totes').select('id, items').in('id', pickupToteIds)
+      const itemCountByTote = new Map<string, number>(
+        (toteItemsData ?? []).map(t => [t.id, ((t.items as { label: string }[] | null) ?? []).length])
+      )
+      for (const req of tReqs) {
+        if (req.type !== 'pickup') continue
+        req.fullCount = req.toteIds.filter(id => (itemCountByTote.get(id) ?? 0) > 0).length
+        req.emptyCount = req.toteIds.filter(id => (itemCountByTote.get(id) ?? 0) === 0).length
+      }
+    }
 
     setPickupRequests(pReqs)
     setToteRequests(tReqs)
@@ -133,18 +156,25 @@ export default function AdminRequestsPage() {
             <div key={req.id} className="card space-y-3">
               <div className="flex items-start gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                  req.type === 'empty_tote_delivery' ? 'bg-purple-100' : 'bg-blue-100'
+                  req.type === 'empty_tote_delivery' ? 'bg-purple-100'
+                  : req.type === 'full_tote_delivery' ? 'bg-green-100'
+                  : 'bg-blue-100'
                 }`}>
-                  {req.type === 'empty_tote_delivery'
-                    ? <Package className="w-5 h-5 text-purple-600" />
-                    : <Truck className="w-5 h-5 text-blue-600" />}
+                  {req.type === 'empty_tote_delivery' ? <Package className="w-5 h-5 text-purple-600" />
+                  : req.type === 'full_tote_delivery' ? <ArrowDownToLine className="w-5 h-5 text-green-600" />
+                  : <Truck className="w-5 h-5 text-blue-600" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-brand-navy text-sm">{req.customerName}</p>
                   <p className="text-xs text-gray-600 mt-0.5">
                     {req.type === 'empty_tote_delivery'
                       ? `Deliver ${req.quantity ?? '?'} empty tote${req.quantity !== 1 ? 's' : ''}`
-                      : `Pick up ${req.toteIds.length} tote${req.toteIds.length !== 1 ? 's' : ''}`}
+                      : req.type === 'full_tote_delivery'
+                      ? `Deliver ${req.toteIds.length} tote${req.toteIds.length !== 1 ? 's' : ''} back`
+                      : `Pick up ${req.toteIds.length} tote${req.toteIds.length !== 1 ? 's' : ''}` +
+                        (req.fullCount !== undefined
+                          ? ` (${req.fullCount} full, ${req.emptyCount} empty)`
+                          : '')}
                   </p>
                   {req.preferredDate && (
                     <p className="text-xs text-brand-blue font-semibold mt-1 flex items-center gap-1">
