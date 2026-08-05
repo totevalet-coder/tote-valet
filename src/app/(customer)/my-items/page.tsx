@@ -16,6 +16,7 @@ import {
   ImageOff,
   Plus,
   Trash2,
+  Pencil,
 } from 'lucide-react'
 import type { Tote, ToteItem } from '@/types/database'
 
@@ -351,6 +352,16 @@ function MyItemsContent() {
             </div>
             <span className="text-3xl">📦</span>
           </div>
+
+          {/* Nickname is always editable; item/photo edits only apply while
+              the tote is at home — Edit Totes itself hides those controls
+              quietly when it isn't, so no status check is needed here. */}
+          <button
+            onClick={() => router.push(`/edit-tote?id=${selectedTote.id}`)}
+            className="flex items-center gap-1.5 text-brand-blue text-sm font-semibold"
+          >
+            <Pencil className="w-3.5 h-3.5" /> Edit This Tote
+          </button>
 
           <div>
             <p className="text-sm font-semibold text-gray-700 mb-2">Items ({selectedTote.items.length})</p>

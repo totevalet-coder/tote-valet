@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useRef, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   Camera,
@@ -34,8 +34,9 @@ interface ExistingPhoto {
 
 type Step = 'lookup' | 'edit' | 'confirm' | 'done'
 
-export default function EditTotePage() {
+function EditToteContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [step, setStep] = useState<Step>('lookup')
@@ -68,11 +69,19 @@ export default function EditTotePage() {
       if (!userData.user) return
       const { data: c } = await supabase.from('customers').select('id').eq('auth_id', userData.user.id).single()
       if (c) setCustomerId(c.id)
+
+      // Deep link from My Items — jump straight to a known tote instead of
+      // making the customer re-scan/re-type a barcode they just tapped into.
+      const deepLinkId = searchParams.get('id')
+      if (deepLinkId) {
+        setBarcodeValue(deepLinkId)
+        await lookupTote(deepLinkId, c?.id ?? null)
+      }
     }
     load()
   }, [])
 
-  async function lookupTote(id: string) {
+  async function lookupTote(id: string, customerIdOverride?: string | null) {
     const trimmed = id.trim().toUpperCase()
     if (!trimmed) return
     setLookingUp(true)
@@ -83,8 +92,9 @@ export default function EditTotePage() {
     // customer's own totes explicitly, not just via RLS (Edit Totes does full
     // overwrites/deletes, unlike Add Items' append-only writes, so this is
     // worth being extra deliberate about rather than trusting RLS alone).
+    const cid = customerIdOverride !== undefined ? customerIdOverride : customerId
     let query = supabase.from('totes').select('id, tote_name, items, photo_urls, status').eq('id', trimmed)
-    if (customerId) query = query.eq('customer_id', customerId)
+    if (cid) query = query.eq('customer_id', cid)
     const { data } = await query.maybeSingle()
 
     if (!data) {
@@ -138,8 +148,23 @@ export default function EditTotePage() {
     setItems(prev => prev.filter(i => i.id !== id))
   }
 
-  function emptyTote() {
+  async function emptyTote() {
     setItems([])
+    setToteName('') // full reset, not just inventory — falls back to the tote ID on save
+
+    // Photos too — not just items. Existing (already-saved) photos are queued
+    // for storage cleanup the same way a single manual delete is (handled in
+    // handleSave via removedPhotoPaths). Newly-added-this-session photos are
+    // already sitting in storage from handlePhotoCapture's immediate upload,
+    // so they need their own explicit removal here or they'd be orphaned.
+    setRemovedPhotoPaths(prev => [...prev, ...existingPhotos.map(p => p.path)])
+    setExistingPhotos([])
+    if (newPhotoPaths.length > 0) {
+      await supabase.storage.from('tote-photos').remove(newPhotoPaths).catch(() => {})
+    }
+    setNewPhotoPaths([])
+    setNewPhotoThumbs([])
+
     setConfirmingEmpty(false)
   }
 
@@ -324,25 +349,32 @@ export default function EditTotePage() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Items</label>
             {editable ? (
               <div className="space-y-2">
-                {items.length > 0 && (
+                {(toteName.trim() !== '' || items.filter(i => i.label.trim()).length > 0 || totalPhotoCount > 0) && (
                   !confirmingEmpty ? (
                     <button
                       onClick={() => setConfirmingEmpty(true)}
                       className="w-full flex items-center justify-center gap-2 text-red-600 border border-red-200 bg-red-50 rounded-xl py-2.5 text-sm font-semibold hover:bg-red-100 transition-colors"
                     >
-                      <Trash2 className="w-4 h-4" /> Empty Tote / Delete All Inventory
+                      <Trash2 className="w-4 h-4" /> Reset Tote / Delete Everything
                     </button>
                   ) : (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
                       <p className="text-sm text-red-700">
-                        This removes all {items.filter(i => i.label.trim()).length} item{items.filter(i => i.label.trim()).length !== 1 ? 's' : ''} from this tote. You&apos;ll still confirm before it actually saves, but this clears the list now.
+                        {(() => {
+                          const itemCount = items.filter(i => i.label.trim()).length
+                          const parts: string[] = []
+                          if (toteName.trim() !== '') parts.push('the nickname')
+                          if (itemCount > 0) parts.push(`${itemCount} item${itemCount !== 1 ? 's' : ''}`)
+                          if (totalPhotoCount > 0) parts.push(`${totalPhotoCount} photo${totalPhotoCount !== 1 ? 's' : ''}`)
+                          return `This is a complete reset — it clears ${parts.join(', ')} from this tote.`
+                        })()} You&apos;ll still confirm before it actually saves, but this clears everything now.
                       </p>
                       <div className="flex gap-2">
                         <button
                           onClick={emptyTote}
                           className="flex-1 bg-red-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-red-700 transition-colors"
                         >
-                          Yes, Empty Tote
+                          Yes, Reset Tote
                         </button>
                         <button
                           onClick={() => setConfirmingEmpty(false)}
@@ -509,5 +541,13 @@ export default function EditTotePage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function EditTotePage() {
+  return (
+    <Suspense fallback={<div className="px-5 pt-6 space-y-3"><div className="h-20 bg-gray-200 rounded-2xl animate-pulse" /></div>}>
+      <EditToteContent />
+    </Suspense>
   )
 }
