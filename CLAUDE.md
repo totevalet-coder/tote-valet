@@ -177,6 +177,11 @@ Claude API suggests item names from tote photos. Lives at `api/ai-label/`. Uses 
 
 ---
 
+## Roadmap
+- **Native Android app (Play Store)** — planned, not yet started. Today Tote Valet is a Next.js web app on Vercel with no native wrapper (e.g. Capacitor) in the codebase. This was previously discussed with the user but hadn't made it into this doc — flagged 2026-08-05 when the gap surfaced. Notable side benefit: a native app would very likely reduce/eliminate TODO #14 below (intermittent Google OAuth PKCE cookie failure), since native OAuth flows use a system-browser-tab + deep-link-back pattern instead of a same-origin cookie surviving a full page redirect round trip — but going native is a real rebuild, not a quick fix, and isn't scoped/timed yet.
+
+---
+
 ## Known Outstanding TODOs
 1. Warehouse portal — Add "Sort" under Quick Actions
 2. Warehouse portal — Add "Sort" under Reports
