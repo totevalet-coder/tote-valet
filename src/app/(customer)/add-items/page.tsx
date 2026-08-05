@@ -14,6 +14,7 @@ import {
 import type { ToteItem } from '@/types/database'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 import ToteItemRow from '@/components/ui/ToteItemRow'
+import ToteConfirmReview from '@/components/ui/ToteConfirmReview'
 import { detectItemsFromPhoto } from '@/lib/aiLabel'
 
 const MAX_PHOTOS = 5
@@ -25,7 +26,7 @@ interface DetectedItem {
   accepted: boolean // false only for an AI-suggested label the customer hasn't confirmed yet
 }
 
-type WorkflowStep = 'tote' | 'items' | 'done'
+type WorkflowStep = 'tote' | 'items' | 'confirm' | 'done'
 
 export default function AddItemsPage() {
   const router = useRouter()
@@ -218,6 +219,11 @@ export default function AddItemsPage() {
       {/* Back button */}
       {step === 'items' && (
         <button onClick={() => setStep('tote')} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
+          <ChevronLeft className="w-5 h-5" /> Back
+        </button>
+      )}
+      {step === 'confirm' && (
+        <button onClick={() => setStep('items')} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
           <ChevronLeft className="w-5 h-5" /> Back
         </button>
       )}
@@ -423,19 +429,6 @@ export default function AddItemsPage() {
             <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoCapture} />
           </div>
 
-          <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Items to add</span>
-              <span className="font-semibold text-brand-navy">{items.filter(i => i.label.trim()).length}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Tote</span>
-              <span className="font-semibold text-brand-navy">
-                {existingToteName ?? (toteName || (barcodeValue ? barcodeValue : 'New tote'))}
-              </span>
-            </div>
-          </div>
-
           <button
             onClick={() => {
               if (items.filter(i => i.label.trim()).length === 0) {
@@ -443,15 +436,26 @@ export default function AddItemsPage() {
                 return
               }
               setError(null)
-              handleSave()
+              setStep('confirm')
             }}
-            disabled={saving}
-            className="btn-primary w-full flex items-center justify-center gap-2"
+            className="btn-primary w-full"
           >
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            Save Items
+            Continue
           </button>
         </div>
+      )}
+
+      {/* ── CONFIRM ── */}
+      {step === 'confirm' && (
+        <ToteConfirmReview
+          toteName={existingToteName ?? (toteName || (barcodeValue || 'New tote'))}
+          toteId={barcodeValue || undefined}
+          items={items.filter(i => i.label.trim())}
+          photoUrls={[...existingPhotoUrls, ...photoThumbs]}
+          onConfirm={handleSave}
+          onBack={() => setStep('items')}
+          confirming={saving}
+        />
       )}
 
       {/* ── DONE ── */}

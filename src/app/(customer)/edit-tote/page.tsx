@@ -14,6 +14,7 @@ import {
 import type { ToteItem, ToteStatus } from '@/types/database'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 import ToteItemRow from '@/components/ui/ToteItemRow'
+import ToteConfirmReview from '@/components/ui/ToteConfirmReview'
 import { detectItemsFromPhoto } from '@/lib/aiLabel'
 
 const MAX_PHOTOS = 5
@@ -30,7 +31,7 @@ interface ExistingPhoto {
   url: string  // signed URL — for display
 }
 
-type Step = 'lookup' | 'edit' | 'done'
+type Step = 'lookup' | 'edit' | 'confirm' | 'done'
 
 export default function EditTotePage() {
   const router = useRouter()
@@ -251,6 +252,11 @@ export default function EditTotePage() {
           <ChevronLeft className="w-5 h-5" /> Back
         </button>
       )}
+      {step === 'confirm' && (
+        <button onClick={() => setStep('edit')} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
+          <ChevronLeft className="w-5 h-5" /> Back
+        </button>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
@@ -409,11 +415,40 @@ export default function EditTotePage() {
             <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoCapture} />
           </div>
 
-          <button onClick={handleSave} disabled={saving} className="btn-primary w-full flex items-center justify-center gap-2">
+          <button
+            onClick={() => {
+              if (editable) {
+                if (items.filter(i => i.label.trim()).length === 0) {
+                  setError('A tote needs at least one item, or request it be picked up empty.')
+                  return
+                }
+                setError(null)
+                setStep('confirm')
+              } else {
+                // Name-only change — nothing physical to confirm, save directly.
+                handleSave()
+              }
+            }}
+            disabled={saving}
+            className="btn-primary w-full flex items-center justify-center gap-2"
+          >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            Save Changes
+            {editable ? 'Continue' : 'Save Changes'}
           </button>
         </div>
+      )}
+
+      {/* ── CONFIRM ── */}
+      {step === 'confirm' && (
+        <ToteConfirmReview
+          toteName={toteName || toteId}
+          toteId={toteId}
+          items={items.filter(i => i.label.trim())}
+          photoUrls={[...existingPhotos.map(p => p.url), ...newPhotoThumbs]}
+          onConfirm={handleSave}
+          onBack={() => setStep('edit')}
+          confirming={saving}
+        />
       )}
 
       {/* ── DONE ── */}
