@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import StatBox from '@/components/ui/StatBox'
+import { SkeletonList } from '@/components/ui/LoadingSkeleton'
 import { PlusCircle, PackageSearch, Package, Truck, ArrowUpFromLine, ArrowDownToLine, SquarePen } from 'lucide-react'
 import type { Tote } from '@/types/database'
 
@@ -132,16 +133,8 @@ export default function DashboardPage() {
         </h2>
         {loading ? (
           <div className="space-y-3">
-            <div className="flex gap-3">
-              {[1, 2].map(i => (
-                <div key={i} className="flex-1 h-24 bg-gray-200 rounded-2xl animate-pulse" />
-              ))}
-            </div>
-            <div className="flex gap-3">
-              {[3, 4].map(i => (
-                <div key={i} className="flex-1 h-24 bg-gray-200 rounded-2xl animate-pulse" />
-              ))}
-            </div>
+            <SkeletonList count={2} itemClassName="flex-1 h-24 rounded-2xl" wrapperClassName="flex gap-3" />
+            <SkeletonList count={2} itemClassName="flex-1 h-24 rounded-2xl" wrapperClassName="flex gap-3" />
           </div>
         ) : (
           <div className="space-y-3">

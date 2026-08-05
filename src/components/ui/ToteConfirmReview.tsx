@@ -1,6 +1,7 @@
 'use client'
 
 import { Loader2, PackageCheck } from 'lucide-react'
+import PhotoGrid from './PhotoGrid'
 
 interface Item {
   label: string
@@ -60,14 +61,7 @@ export default function ToteConfirmReview({ toteName, toteId, items, photoUrls, 
         {photoUrls.length > 0 && (
           <div>
             <p className="text-xs font-semibold text-gray-500 mb-1.5">Photos ({photoUrls.length})</p>
-            <div className="flex gap-2 flex-wrap">
-              {photoUrls.map((url, i) => (
-                <div key={i} className="w-16 h-16 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
-                </div>
-              ))}
-            </div>
+            <PhotoGrid size="sm" photos={photoUrls.map((url, i) => ({ key: i, url }))} />
           </div>
         )}
       </div>

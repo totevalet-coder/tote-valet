@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { ComponentType } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Bell, CheckCheck, Package, Truck, AlertCircle, DollarSign } from 'lucide-react'
+import { SkeletonList } from '@/components/ui/LoadingSkeleton'
 
 interface AppNotification {
   id: string
@@ -89,11 +90,7 @@ export default function NotificationsPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-3">
-          {[1,2,3,4].map(i => (
-            <div key={i} className="h-20 bg-gray-200 rounded-2xl animate-pulse" />
-          ))}
-        </div>
+        <SkeletonList count={4} />
       ) : notifications.length === 0 ? (
         <div className="text-center py-16">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">

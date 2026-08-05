@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, Download, Clock, CreditCard, Gift, CheckCircle2, Plus } from 'lucide-react'
+import { Download, Clock, CreditCard, Gift, CheckCircle2, Plus } from 'lucide-react'
 import type { Tote } from '@/types/database'
 import CardSetupForm from '@/components/ui/CardSetupForm'
 import type { CardSetupResult } from '@/components/ui/CardSetupForm'
+import BackButton from '@/components/ui/BackButton'
+import { SkeletonList } from '@/components/ui/LoadingSkeleton'
 import { FREE_EXCHANGES_PER_YEAR, GRACE_PERIOD_DAYS } from '@/lib/billing'
 
 interface CardInfo {
@@ -264,13 +266,7 @@ export default function BillingPage() {
 
   return (
     <div className="px-5 pt-6 pb-6 space-y-5">
-      <button
-        onClick={() => router.back()}
-        className="flex items-center gap-1 text-brand-navy font-semibold text-sm"
-      >
-        <ChevronLeft className="w-5 h-5" />
-        Back
-      </button>
+      <BackButton onClick={() => router.back()} />
 
       <div>
         <h1 className="text-2xl font-black text-brand-navy">Billing & Invoice</h1>
@@ -278,9 +274,7 @@ export default function BillingPage() {
       </div>
 
       {loading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map(i => <div key={i} className="h-16 bg-gray-200 rounded-2xl animate-pulse" />)}
-        </div>
+        <SkeletonList count={3} itemClassName="h-16 rounded-2xl" />
       ) : (
         <>
           {/* Summary card */}

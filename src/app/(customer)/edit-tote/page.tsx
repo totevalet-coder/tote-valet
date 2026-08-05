@@ -7,15 +7,17 @@ import {
   Camera,
   Loader2,
   Plus,
-  ChevronLeft,
   CheckCircle2,
-  X,
   Trash2,
 } from 'lucide-react'
 import type { ToteItem, ToteStatus } from '@/types/database'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 import ToteItemRow from '@/components/ui/ToteItemRow'
 import ToteConfirmReview from '@/components/ui/ToteConfirmReview'
+import PhotoGrid from '@/components/ui/PhotoGrid'
+import BackButton from '@/components/ui/BackButton'
+import AlertBanner from '@/components/ui/AlertBanner'
+import { SkeletonBlock } from '@/components/ui/LoadingSkeleton'
 import { detectItemsFromPhoto } from '@/lib/aiLabel'
 
 const MAX_PHOTOS = 5
@@ -281,20 +283,10 @@ function EditToteContent() {
   return (
     <div className="px-5 pt-6 pb-24 space-y-5">
 
-      {step === 'edit' && (
-        <button onClick={reset} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
-          <ChevronLeft className="w-5 h-5" /> Back
-        </button>
-      )}
-      {step === 'confirm' && (
-        <button onClick={() => setStep('edit')} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
-          <ChevronLeft className="w-5 h-5" /> Back
-        </button>
-      )}
+      {step === 'edit' && <BackButton onClick={reset} />}
+      {step === 'confirm' && <BackButton onClick={() => setStep('edit')} />}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
-      )}
+      {error && <AlertBanner>{error}</AlertBanner>}
 
       {/* ── LOOKUP ── */}
       {step === 'lookup' && (
@@ -317,9 +309,9 @@ function EditToteContent() {
           )}
 
           {notFound && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+            <AlertBanner>
               We couldn&apos;t find tote &ldquo;{barcodeValue}&rdquo; on your account. Check the ID and try again.
-            </div>
+            </AlertBanner>
           )}
         </div>
       )}
@@ -431,39 +423,22 @@ function EditToteContent() {
             </div>
 
             {(existingPhotos.length > 0 || newPhotoThumbs.length > 0) && (
-              <div className="flex gap-2 flex-wrap mb-3">
-                {existingPhotos.map(photo => (
-                  <div key={photo.path} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.url} alt="Tote photo" className="w-full h-full object-cover" />
-                    {editable && (
-                      <button
-                        onClick={() => removeExistingPhoto(photo.path)}
-                        className="absolute top-1 right-1 bg-black/50 rounded-full p-0.5"
-                      >
-                        <X className="w-3 h-3 text-white" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {newPhotoThumbs.map((thumb, idx) => (
-                  <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={thumb} alt={`New photo ${idx + 1}`} className="w-full h-full object-cover" />
-                    {idx >= newPhotoPaths.length ? (
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                        <Loader2 className="w-4 h-4 text-white animate-spin" />
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => removeNewPhoto(idx)}
-                        className="absolute top-1 right-1 bg-black/50 rounded-full p-0.5"
-                      >
-                        <X className="w-3 h-3 text-white" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+              <div className="mb-3">
+                <PhotoGrid
+                  photos={[
+                    ...existingPhotos.map(photo => ({
+                      key: photo.path,
+                      url: photo.url,
+                      onRemove: editable ? () => removeExistingPhoto(photo.path) : undefined,
+                    })),
+                    ...newPhotoThumbs.map((thumb, idx) => ({
+                      key: `new-${idx}`,
+                      url: thumb,
+                      uploading: idx >= newPhotoPaths.length,
+                      onRemove: idx >= newPhotoPaths.length ? undefined : () => removeNewPhoto(idx),
+                    })),
+                  ]}
+                />
               </div>
             )}
 
@@ -546,7 +521,7 @@ function EditToteContent() {
 
 export default function EditTotePage() {
   return (
-    <Suspense fallback={<div className="px-5 pt-6 space-y-3"><div className="h-20 bg-gray-200 rounded-2xl animate-pulse" /></div>}>
+    <Suspense fallback={<div className="px-5 pt-6"><SkeletonBlock className="h-20 rounded-2xl" /></div>}>
       <EditToteContent />
     </Suspense>
   )

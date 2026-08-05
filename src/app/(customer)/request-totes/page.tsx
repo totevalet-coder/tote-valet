@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, Package, CheckCircle2, Loader2, Clock } from 'lucide-react'
+import { Package, CheckCircle2, Loader2, Clock } from 'lucide-react'
+import BackButton from '@/components/ui/BackButton'
+import AlertBanner from '@/components/ui/AlertBanner'
 
 const QUICK_AMOUNTS = [1, 2, 3, 4]
 
@@ -118,9 +120,7 @@ export default function RequestTotesPage() {
 
   return (
     <div className="px-5 pt-6 pb-6 space-y-6">
-      <button onClick={() => router.back()} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
-        <ChevronLeft className="w-5 h-5" /> Back
-      </button>
+      <BackButton onClick={() => router.back()} />
 
       <div>
         <h1 className="text-2xl font-black text-brand-navy">Request Empty Totes</h1>
@@ -150,9 +150,7 @@ export default function RequestTotesPage() {
         </div>
       )}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
-      )}
+      {error && <AlertBanner>{error}</AlertBanner>}
 
       {/* Quantity selector */}
       <div>

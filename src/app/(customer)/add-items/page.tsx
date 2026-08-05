@@ -7,14 +7,15 @@ import {
   Camera,
   Loader2,
   Plus,
-  ChevronLeft,
   CheckCircle2,
-  X,
 } from 'lucide-react'
 import type { ToteItem } from '@/types/database'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 import ToteItemRow from '@/components/ui/ToteItemRow'
 import ToteConfirmReview from '@/components/ui/ToteConfirmReview'
+import PhotoGrid from '@/components/ui/PhotoGrid'
+import BackButton from '@/components/ui/BackButton'
+import AlertBanner from '@/components/ui/AlertBanner'
 import { detectItemsFromPhoto } from '@/lib/aiLabel'
 
 const MAX_PHOTOS = 5
@@ -217,20 +218,10 @@ export default function AddItemsPage() {
     <div className="px-5 pt-6 pb-24 space-y-5">
 
       {/* Back button */}
-      {step === 'items' && (
-        <button onClick={() => setStep('tote')} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
-          <ChevronLeft className="w-5 h-5" /> Back
-        </button>
-      )}
-      {step === 'confirm' && (
-        <button onClick={() => setStep('items')} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
-          <ChevronLeft className="w-5 h-5" /> Back
-        </button>
-      )}
+      {step === 'items' && <BackButton onClick={() => setStep('tote')} />}
+      {step === 'confirm' && <BackButton onClick={() => setStep('items')} />}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
-      )}
+      {error && <AlertBanner>{error}</AlertBanner>}
 
       {/* ── STEP 1: Which Tote ── */}
       {step === 'tote' && (
@@ -298,14 +289,7 @@ export default function AddItemsPage() {
                 {existingPhotoUrls.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-gray-500 mb-1.5">Photos</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {existingPhotoUrls.map((url, i) => (
-                        <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={url} alt={`Existing photo ${i + 1}`} className="w-full h-full object-cover" />
-                        </div>
-                      ))}
-                    </div>
+                    <PhotoGrid size="sm" photos={existingPhotoUrls.map((url, i) => ({ key: i, url }))} />
                   </div>
                 )}
               </div>
@@ -390,25 +374,15 @@ export default function AddItemsPage() {
 
             {/* Thumbnails */}
             {photoThumbs.length > 0 && (
-              <div className="flex gap-2 flex-wrap mb-3">
-                {photoThumbs.map((thumb, idx) => (
-                  <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={thumb} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                    {idx >= photoPaths.length ? (
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                        <Loader2 className="w-4 h-4 text-white animate-spin" />
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => removePhoto(idx)}
-                        className="absolute top-1 right-1 bg-black/50 rounded-full p-0.5"
-                      >
-                        <X className="w-3 h-3 text-white" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+              <div className="mb-3">
+                <PhotoGrid
+                  photos={photoThumbs.map((thumb, idx) => ({
+                    key: idx,
+                    url: thumb,
+                    uploading: idx >= photoPaths.length,
+                    onRemove: idx >= photoPaths.length ? undefined : () => removePhoto(idx),
+                  }))}
+                />
               </div>
             )}
 

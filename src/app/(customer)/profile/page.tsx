@@ -4,8 +4,11 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { ChevronLeft, Loader2, CheckCircle2, User, KeyRound } from 'lucide-react'
+import { Loader2, CheckCircle2, User, KeyRound } from 'lucide-react'
 import AddressInput from '@/components/ui/AddressInput'
+import BackButton from '@/components/ui/BackButton'
+import AlertBanner from '@/components/ui/AlertBanner'
+import { SkeletonList } from '@/components/ui/LoadingSkeleton'
 import type { Customer } from '@/types/database'
 
 export default function ProfilePage() {
@@ -69,13 +72,7 @@ export default function ProfilePage() {
 
   return (
     <div className="px-5 pt-6 pb-6 space-y-5">
-      <button
-        onClick={() => router.back()}
-        className="flex items-center gap-1 text-brand-navy font-semibold text-sm"
-      >
-        <ChevronLeft className="w-5 h-5" />
-        Back
-      </button>
+      <BackButton onClick={() => router.back()} />
 
       <div className="flex items-center gap-4">
         <div className="w-16 h-16 bg-brand-navy rounded-2xl flex items-center justify-center">
@@ -90,22 +87,16 @@ export default function ProfilePage() {
       </div>
 
       {loading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map(i => <div key={i} className="h-14 bg-gray-200 rounded-xl animate-pulse" />)}
-        </div>
+        <SkeletonList count={3} itemClassName="h-14 rounded-xl" wrapperClassName="space-y-4" />
       ) : (
         <form onSubmit={handleSave} className="space-y-4">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
-              {error}
-            </div>
-          )}
+          {error && <AlertBanner>{error}</AlertBanner>}
 
           {saved && (
-            <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-xl px-4 py-3 flex items-center gap-2">
+            <AlertBanner variant="success" className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4" />
               Profile updated successfully!
-            </div>
+            </AlertBanner>
           )}
 
           <div>

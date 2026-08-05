@@ -4,9 +4,13 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ToteCard from '@/components/ui/ToteCard'
+import PhotoGrid from '@/components/ui/PhotoGrid'
+import SelectableToteRow from '@/components/ui/SelectableToteRow'
+import BackButton from '@/components/ui/BackButton'
+import AlertBanner from '@/components/ui/AlertBanner'
+import { SkeletonList } from '@/components/ui/LoadingSkeleton'
 import {
   Search,
-  ChevronLeft,
   CheckCircle2,
   CalendarDays,
   Loader2,
@@ -53,7 +57,6 @@ function MyItemsContent() {
   const [error, setError] = useState<string | null>(null)
   const [signedUrls, setSignedUrls] = useState<string[]>([])
   const [loadingPhotos, setLoadingPhotos] = useState(false)
-  const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null)
 
   // Return state
   const [returnSelected, setReturnSelected] = useState<Set<string>>(new Set())
@@ -327,23 +330,7 @@ function MyItemsContent() {
   if (selectedTote) {
     return (
       <div className="px-5 pt-6 pb-6 space-y-4">
-        {/* Full-screen photo lightbox */}
-        {expandedPhoto && (
-          <div
-            className="fixed inset-0 bg-black z-50 flex items-center justify-center"
-            onClick={() => setExpandedPhoto(null)}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={expandedPhoto} alt="Tote photo" className="max-w-full max-h-full object-contain" />
-            <button className="absolute top-4 right-4 bg-white/20 rounded-full p-2">
-              <X className="w-6 h-6 text-white" />
-            </button>
-          </div>
-        )}
-
-        <button onClick={() => { setSelectedTote(null); setSignedUrls([]); setExpandedPhoto(null) }} className="flex items-center gap-1 text-brand-navy font-semibold text-sm">
-          <ChevronLeft className="w-5 h-5" /> Back to My Items
-        </button>
+        <BackButton onClick={() => { setSelectedTote(null); setSignedUrls([]) }} label="Back to My Items" />
 
         <div className="card space-y-4">
           <div className="flex items-start justify-between">
@@ -388,22 +375,9 @@ function MyItemsContent() {
           <div>
             <p className="text-sm font-semibold text-gray-700 mb-2">Photos</p>
             {loadingPhotos ? (
-              <div className="flex gap-2">
-                {[1,2].map(i => <div key={i} className="w-20 h-20 rounded-xl bg-gray-200 animate-pulse" />)}
-              </div>
+              <SkeletonList count={2} itemClassName="w-20 h-20 rounded-xl" wrapperClassName="flex gap-2" />
             ) : signedUrls.length > 0 ? (
-              <div className="flex gap-2 flex-wrap">
-                {signedUrls.map((url, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setExpandedPhoto(url)}
-                    className="w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0 hover:opacity-90 transition-opacity"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
+              <PhotoGrid photos={signedUrls.map((url, i) => ({ key: i, url }))} />
             ) : (
               <div className="flex items-center gap-2 text-gray-400 text-sm">
                 <ImageOff className="w-4 h-4" />
@@ -450,10 +424,10 @@ function MyItemsContent() {
   return (
     <div className="px-5 pt-6 pb-6 space-y-4">
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 flex items-start gap-2">
+        <AlertBanner className="flex items-start gap-2">
           <span className="flex-1">{error}</span>
           <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
-        </div>
+        </AlertBanner>
       )}
 
       {/* ── BROWSE TAB ── */}
@@ -499,7 +473,7 @@ function MyItemsContent() {
           )}
 
           {loading ? (
-            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 bg-gray-200 rounded-2xl animate-pulse" />)}</div>
+            <SkeletonList count={3} />
           ) : filteredTotes.length === 0 ? (
             <div className="text-center py-12">
               <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -691,14 +665,7 @@ function MyItemsContent() {
                           {[1,2].map(i => <div key={i} className="w-20 h-20 rounded-xl bg-gray-200 animate-pulse" />)}
                         </div>
                       ) : confirmUrls.length > 0 ? (
-                        <div className="flex gap-2 flex-wrap">
-                          {confirmUrls.map((url, i) => (
-                            <div key={i} className="w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
-                            </div>
-                          ))}
-                        </div>
+                        <PhotoGrid photos={confirmUrls.map((url, i) => ({ key: i, url }))} />
                       ) : (
                         <div className="flex items-center gap-2 text-gray-400 text-sm">
                           <ImageOff className="w-4 h-4" />
@@ -799,20 +766,14 @@ function MyItemsContent() {
 
                   <div className="space-y-3">
                     {storageReadyTotes.map(tote => (
-                      <button
+                      <SelectableToteRow
                         key={tote.id}
+                        toteName={tote.tote_name}
+                        toteId={tote.id}
+                        subtitle={`${tote.items.length} item${tote.items.length !== 1 ? 's' : ''}`}
+                        selected={pickupSelected.has(tote.id)}
                         onClick={() => togglePickupSelect(tote.id)}
-                        className={`w-full card flex items-center gap-4 transition-all duration-150 ${
-                          pickupSelected.has(tote.id) ? 'border-2 border-brand-blue bg-brand-blue/5 shadow-md' : 'hover:shadow-md'
-                        }`}
-                      >
-                        <div className="w-10 h-10 rounded-xl bg-brand-navy/5 flex items-center justify-center flex-shrink-0 text-xl">📦</div>
-                        <div className="flex-1 text-left min-w-0">
-                          <p className="font-bold text-brand-navy text-sm truncate">{tote.tote_name ?? tote.id}</p>
-                          <p className="text-xs text-gray-400">{tote.items.length} item{tote.items.length !== 1 ? 's' : ''}</p>
-                        </div>
-                        {pickupSelected.has(tote.id) && <CheckCircle2 className="w-5 h-5 text-brand-blue flex-shrink-0" />}
-                      </button>
+                      />
                     ))}
                   </div>
 
@@ -903,8 +864,13 @@ function MyItemsContent() {
 
                   <div className="space-y-3">
                     {emptyReturnTotes.map(tote => (
-                      <button
+                      <SelectableToteRow
                         key={tote.id}
+                        toteName={tote.tote_name}
+                        toteId={tote.id}
+                        subtitle="Empty tote"
+                        emoji="🗃️"
+                        selected={emptyReturnSelected.has(tote.id)}
                         onClick={() => {
                           setEmptyReturnSelected(prev => {
                             const next = new Set(prev)
@@ -912,17 +878,7 @@ function MyItemsContent() {
                             return next
                           })
                         }}
-                        className={`w-full card flex items-center gap-4 transition-all duration-150 ${
-                          emptyReturnSelected.has(tote.id) ? 'border-2 border-brand-blue bg-brand-blue/5 shadow-md' : 'hover:shadow-md'
-                        }`}
-                      >
-                        <div className="w-10 h-10 rounded-xl bg-brand-navy/5 flex items-center justify-center flex-shrink-0 text-xl">🗃️</div>
-                        <div className="flex-1 text-left min-w-0">
-                          <p className="font-bold text-brand-navy text-sm truncate">{tote.tote_name ?? tote.id}</p>
-                          <p className="text-xs text-gray-400">Empty tote</p>
-                        </div>
-                        {emptyReturnSelected.has(tote.id) && <CheckCircle2 className="w-5 h-5 text-brand-blue flex-shrink-0" />}
-                      </button>
+                      />
                     ))}
                   </div>
 
@@ -986,7 +942,7 @@ function MyItemsContent() {
               </div>
 
               {loading ? (
-                <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-20 bg-gray-200 rounded-2xl animate-pulse" />)}</div>
+                <SkeletonList count={2} />
               ) : storedTotes.length === 0 ? (
                 <div className="text-center py-10">
                   <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -996,17 +952,14 @@ function MyItemsContent() {
               ) : (
                 <div className="space-y-3">
                   {storedTotes.map(tote => (
-                    <button key={tote.id} onClick={() => toggleReturnSelect(tote.id)}
-                      className={`w-full card flex items-center gap-4 transition-all duration-150 ${
-                        returnSelected.has(tote.id) ? 'border-2 border-brand-blue bg-brand-blue/5 shadow-md' : 'hover:shadow-md'
-                      }`}>
-                      <div className="w-10 h-10 rounded-xl bg-brand-navy/5 flex items-center justify-center flex-shrink-0 text-xl">📦</div>
-                      <div className="flex-1 text-left min-w-0">
-                        <p className="font-bold text-brand-navy text-sm truncate">{tote.tote_name ?? tote.id}</p>
-                        <p className="text-xs text-gray-400">{tote.items.length} items</p>
-                      </div>
-                      {returnSelected.has(tote.id) && <CheckCircle2 className="w-5 h-5 text-brand-blue flex-shrink-0" />}
-                    </button>
+                    <SelectableToteRow
+                      key={tote.id}
+                      toteName={tote.tote_name}
+                      toteId={tote.id}
+                      subtitle={`${tote.items.length} item${tote.items.length !== 1 ? 's' : ''}`}
+                      selected={returnSelected.has(tote.id)}
+                      onClick={() => toggleReturnSelect(tote.id)}
+                    />
                   ))}
                 </div>
               )}
@@ -1026,13 +979,7 @@ function MyItemsContent() {
 
 export default function MyItemsPage() {
   return (
-    <Suspense fallback={
-      <div className="px-5 pt-6 space-y-3">
-        {[1, 2, 3].map(i => (
-          <div key={i} className="h-20 bg-gray-200 rounded-2xl animate-pulse" />
-        ))}
-      </div>
-    }>
+    <Suspense fallback={<div className="px-5 pt-6"><SkeletonList count={3} /></div>}>
       <MyItemsContent />
     </Suspense>
   )
