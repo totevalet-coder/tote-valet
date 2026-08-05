@@ -42,15 +42,19 @@ export default function ToteConfirmReview({ toteName, toteId, items, photoUrls, 
 
         <div>
           <p className="text-xs font-semibold text-gray-500 mb-1.5">Items ({items.length})</p>
-          <ul className="space-y-1.5">
-            {items.map((item, i) => (
-              <li key={i} className="text-sm text-gray-700 flex items-center gap-2">
-                <span className="w-1 h-1 rounded-full bg-gray-400 flex-shrink-0" />
-                {item.label}
-                {item.ai_generated && <span className="text-xs flex-shrink-0" title="Detected from photo">✨</span>}
-              </li>
-            ))}
-          </ul>
+          {items.length > 0 ? (
+            <ul className="space-y-1.5">
+              {items.map((item, i) => (
+                <li key={i} className="text-sm text-gray-700 flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-gray-400 flex-shrink-0" />
+                  {item.label}
+                  {item.ai_generated && <span className="text-xs flex-shrink-0" title="Detected from photo">✨</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-400 italic">This tote will be saved as empty.</p>
+          )}
         </div>
 
         {photoUrls.length > 0 && (

@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   CheckCircle2,
   X,
+  Trash2,
 } from 'lucide-react'
 import type { ToteItem, ToteStatus } from '@/types/database'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
@@ -47,6 +48,7 @@ export default function EditTotePage() {
   const [toteName, setToteName] = useState('')
   const [status, setStatus] = useState<ToteStatus | null>(null)
   const [items, setItems] = useState<EditableItem[]>([])
+  const [confirmingEmpty, setConfirmingEmpty] = useState(false)
   const [existingPhotos, setExistingPhotos] = useState<ExistingPhoto[]>([])
   const [removedPhotoPaths, setRemovedPhotoPaths] = useState<string[]>([]) // storage cleanup on save
   const [newPhotoPaths, setNewPhotoPaths] = useState<string[]>([])
@@ -136,6 +138,11 @@ export default function EditTotePage() {
     setItems(prev => prev.filter(i => i.id !== id))
   }
 
+  function emptyTote() {
+    setItems([])
+    setConfirmingEmpty(false)
+  }
+
   function removeExistingPhoto(path: string) {
     setExistingPhotos(prev => prev.filter(p => p.path !== path))
     setRemovedPhotoPaths(prev => [...prev, path])
@@ -205,8 +212,9 @@ export default function EditTotePage() {
       }
 
       if (editable) {
+        // Zero items is a valid end state — a tote can legitimately be empty
+        // at the customer's home (same status covers both empty and full).
         const validItems = items.filter(i => i.label.trim())
-        if (validItems.length === 0) { setError('A tote needs at least one item, or request it be picked up empty.'); setSaving(false); return }
         update.items = validItems.map(({ label, ai_generated }) => ({ label, ai_generated }))
         update.photo_urls = [...existingPhotos.map(p => p.path), ...newPhotoPaths].slice(0, MAX_PHOTOS)
       }
@@ -237,6 +245,7 @@ export default function EditTotePage() {
     setToteName('')
     setStatus(null)
     setItems([])
+    setConfirmingEmpty(false)
     setExistingPhotos([])
     setRemovedPhotoPaths([])
     setNewPhotoPaths([])
@@ -315,6 +324,36 @@ export default function EditTotePage() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Items</label>
             {editable ? (
               <div className="space-y-2">
+                {items.length > 0 && (
+                  !confirmingEmpty ? (
+                    <button
+                      onClick={() => setConfirmingEmpty(true)}
+                      className="w-full flex items-center justify-center gap-2 text-red-600 border border-red-200 bg-red-50 rounded-xl py-2.5 text-sm font-semibold hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" /> Empty Tote / Delete All Inventory
+                    </button>
+                  ) : (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+                      <p className="text-sm text-red-700">
+                        This removes all {items.filter(i => i.label.trim()).length} item{items.filter(i => i.label.trim()).length !== 1 ? 's' : ''} from this tote. You&apos;ll still confirm before it actually saves, but this clears the list now.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={emptyTote}
+                          className="flex-1 bg-red-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-red-700 transition-colors"
+                        >
+                          Yes, Empty Tote
+                        </button>
+                        <button
+                          onClick={() => setConfirmingEmpty(false)}
+                          className="flex-1 bg-white border border-gray-200 text-gray-600 rounded-xl py-2.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )
+                )}
                 {items.map((item, idx) => (
                   <ToteItemRow
                     key={item.id}
@@ -323,7 +362,7 @@ export default function EditTotePage() {
                     needsAccept={item.ai_generated && !item.accepted}
                     onLabelChange={label => updateItem(item.id, label)}
                     onAccept={() => acceptItem(item.id)}
-                    onRemove={items.length > 1 ? () => removeItem(item.id) : undefined}
+                    onRemove={() => removeItem(item.id)}
                     placeholder={`Item ${idx + 1}`}
                   />
                 ))}
@@ -418,10 +457,8 @@ export default function EditTotePage() {
           <button
             onClick={() => {
               if (editable) {
-                if (items.filter(i => i.label.trim()).length === 0) {
-                  setError('A tote needs at least one item, or request it be picked up empty.')
-                  return
-                }
+                // Zero items is valid (an emptied tote) — always route through
+                // the confirm review either way, nothing to block here.
                 setError(null)
                 setStep('confirm')
               } else {
