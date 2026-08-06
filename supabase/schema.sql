@@ -445,8 +445,8 @@ create policy "errors_driver_insert" on errors
 -- Confirmed live in schema May 2026. Live table also has an `admin_notes text` column
 -- not reflected below — add it here if you ever recreate this table from scratch.
 --
--- ⚠️ type column below UPDATED 2026-08-05, NOT YET APPLIED to the live constraint —
--- see CLAUDE.md TODO for the migration SQL to run in the Supabase dashboard.
+-- ✅ type column below UPDATED and APPLIED to the live constraint 2026-08-05
+-- (confirmed via pg_get_constraintdef in the Supabase SQL editor).
 -- Was ('empty_tote_delivery', 'pickup') only, but app code had already drifted to
 -- also insert 'empty_tote_return' and 'tote_return' (neither ever added here or to
 -- the live constraint, with unchecked insert errors — likely silently failing).
