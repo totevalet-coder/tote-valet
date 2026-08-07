@@ -47,7 +47,7 @@ export default function AdminRoutesPage() {
           onClick={() => router.push('/admin/routes/new')}
           className="flex items-center gap-1.5 bg-brand-navy text-white rounded-xl px-3 py-2 text-sm font-bold hover:bg-blue-900 transition-colors"
         >
-          <Plus className="w-4 h-4" /> New Route
+          <Plus className="w-4 h-4" /> Generate Routes
         </button>
       </div>
 
@@ -72,7 +72,7 @@ export default function AdminRoutesPage() {
         <div className="text-center py-16">
           <Navigation className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="font-bold text-gray-400 text-lg">No routes found</p>
-          <p className="text-gray-400 text-sm mt-1">Tap New Route to create one.</p>
+          <p className="text-gray-400 text-sm mt-1">Tap Generate Routes to create one.</p>
         </div>
       ) : (
         <div className="space-y-3">

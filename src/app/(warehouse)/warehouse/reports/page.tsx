@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { ToteError } from '@/types/database'
-import { Search, CheckCircle, AlertCircle, Package } from 'lucide-react'
+import { Search, CheckCircle, AlertCircle, Package, Pencil, Check, X, Map } from 'lucide-react'
 
 type ReportTab = 'summary' | 'unstowed' | 'bins' | 'errors' | 'search'
 
@@ -41,6 +41,9 @@ function ReportsContent() {
 
   // Bins
   const [bins, setBins] = useState<BinInfo[]>([])
+  const [editingBinId, setEditingBinId] = useState<string | null>(null)
+  const [editCapacity, setEditCapacity] = useState('')
+  const [savingBin, setSavingBin] = useState(false)
 
   // Errors
   const [errors, setErrors] = useState<ToteError[]>([])
@@ -148,6 +151,23 @@ function ReportsContent() {
     setSearching(false)
   }
 
+  function startEditBin(b: BinInfo) {
+    setEditingBinId(b.id)
+    setEditCapacity(String(b.capacity))
+  }
+
+  async function saveBinCapacity(binId: string) {
+    const newCap = parseInt(editCapacity, 10)
+    if (!Number.isFinite(newCap) || newCap < 0) return
+    setSavingBin(true)
+    const { error } = await supabase.from('bins').update({ capacity: newCap }).eq('id', binId)
+    if (!error) {
+      setBins(prev => prev.map(b => b.id === binId ? { ...b, capacity: newCap } : b))
+      setEditingBinId(null)
+    }
+    setSavingBin(false)
+  }
+
   const TABS: { id: ReportTab; label: string }[] = [
     { id: 'summary', label: 'Summary' },
     { id: 'unstowed', label: 'Unstowed' },
@@ -252,27 +272,77 @@ function ReportsContent() {
         </div>
       )}
 
-      {/* ── BINS ── */}
+      {/* ── BINS (Warehouse Setup) ── */}
       {tab === 'bins' && (
         <div className="space-y-4">
-          {/* Row groups */}
-          {['A', 'B', 'C'].map(row => {
-            const rowBins = bins.filter(b => b.row === row)
-            if (rowBins.length === 0) return null
+          {/* Summary stats */}
+          {bins.length > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: 'Rows Configured', value: new Set(bins.map(b => b.row)).size },
+                { label: 'Total Bins', value: bins.length },
+                { label: 'Total Capacity', value: bins.reduce((s, b) => s + b.capacity, 0) },
+              ].map(({ label, value }) => (
+                <div key={label} className="card text-center py-3">
+                  <p className="font-black text-xl text-brand-navy">{value}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5 leading-tight uppercase tracking-wide font-bold">{label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {userRole === 'admin' && (
+            <p className="text-xs text-gray-400 px-1">Tap a bin to override its capacity — e.g. something physically blocking that spot.</p>
+          )}
+
+          {/* Row groups — dynamic, not hardcoded */}
+          {[...new Set(bins.map(b => b.row))].sort().map(row => {
+            const rowBins = bins.filter(b => b.row === row).sort((a, b) => a.id.localeCompare(b.id))
             return (
               <div key={row}>
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Row {row}</h3>
                 <div className="grid grid-cols-3 gap-2">
                   {rowBins.map(b => {
                     const pct = b.capacity > 0 ? Math.round((b.current_count / b.capacity) * 100) : 0
+                    const isEditing = editingBinId === b.id
+                    if (isEditing) {
+                      return (
+                        <div key={b.id} className="rounded-xl border-2 border-brand-blue bg-white px-2 py-2 text-center space-y-1">
+                          <p className="font-black text-sm text-brand-navy">{b.id}</p>
+                          <input
+                            type="number"
+                            min={0}
+                            value={editCapacity}
+                            onChange={e => setEditCapacity(e.target.value)}
+                            className="w-full text-center text-sm border border-gray-300 rounded-lg py-0.5"
+                            autoFocus
+                          />
+                          <div className="flex gap-1 justify-center">
+                            <button onClick={() => saveBinCapacity(b.id)} disabled={savingBin}
+                              className="w-6 h-6 rounded-md bg-green-100 text-green-700 flex items-center justify-center">
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setEditingBinId(null)}
+                              className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 flex items-center justify-center">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    }
                     return (
-                      <div key={b.id} className={`rounded-xl border-2 px-3 py-3 text-center ${binColor(b)}`}>
+                      <button
+                        key={b.id}
+                        onClick={() => userRole === 'admin' && startEditBin(b)}
+                        className={`relative rounded-xl border-2 px-3 py-3 text-center ${binColor(b)} ${userRole === 'admin' ? 'active:scale-[0.96] transition-transform' : ''}`}
+                      >
+                        {userRole === 'admin' && <Pencil className="w-3 h-3 absolute top-1.5 right-1.5 opacity-40" />}
                         <p className="font-black text-sm">{b.id}</p>
                         <p className="text-xs font-semibold mt-0.5">{b.current_count}/{b.capacity}</p>
                         <div className="h-1.5 bg-black/10 rounded-full mt-1.5 overflow-hidden">
                           <div className="h-full bg-current rounded-full opacity-50" style={{ width: `${pct}%` }} />
                         </div>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -295,6 +365,14 @@ function ReportsContent() {
               </div>
             ))}
           </div>
+
+          {/* Placeholder for future warehouse layout visualization */}
+          <button
+            disabled
+            className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 text-gray-400 rounded-2xl py-3 font-semibold text-sm cursor-not-allowed"
+          >
+            <Map className="w-4 h-4" /> Warehouse Layout Map (Coming Soon)
+          </button>
         </div>
       )}
 

@@ -3,13 +3,19 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import type { RouteStop } from '@/types/database'
 import { AlertTriangle, ClipboardList, Package, Boxes, ArrowRight } from 'lucide-react'
 
 interface WHStats {
   storedTotal: number
-  inboundToday: number
+  receivedToday: number
+  expectedToday: number
+  fullToday: number
+  emptyToday: number
+  stowedToday: number
   unstowed: number
   pendingPicks: number
+  pickListsInProgress: number
   binSpacesAvailable: number
   driverErrors: number
   userRole: string
@@ -36,10 +42,13 @@ export default function WarehouseDashboard() {
       return
     }
 
+    const today = new Date().toISOString().split('T')[0]
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0)
+
     // Totes stored
     const { data: totes } = await supabase
       .from('totes')
-      .select('status, bin_location')
+      .select('status, bin_location, last_scan_date')
 
     // Bins capacity
     const { data: bins } = await supabase.from('bins').select('capacity, current_count')
@@ -47,7 +56,7 @@ export default function WarehouseDashboard() {
     // Pick lists pending
     const { data: pickLists } = await supabase
       .from('pick_lists')
-      .select('id, bins')
+      .select('id, status, bins')
       .neq('status', 'complete')
 
     // Driver errors unresolved
@@ -56,11 +65,35 @@ export default function WarehouseDashboard() {
       .select('id')
       .eq('resolved', false)
 
-    const storedTotal = totes?.filter(t => t.status === 'stored').length ?? 0
-    const inboundToday = totes?.filter(t => t.status === 'in_transit').length ?? 0
-    const unstowed = totes?.filter(t => t.status === 'ready_to_stow').length ?? 0
+    // Today's expected inbound = tote_ids on today's pickup-type route stops
+    const { data: todaysRoutes } = await supabase.from('routes').select('stops').eq('date', today)
+    const expectedToteIds = new Set<string>()
+    for (const r of todaysRoutes ?? []) {
+      const stops = r.stops as RouteStop[]
+      for (const s of stops) {
+        if (s.type === 'pickup') s.tote_ids.forEach(id => expectedToteIds.add(id))
+      }
+    }
+    let receivedToday = 0, fullToday = 0, emptyToday = 0
+    if (expectedToteIds.size > 0) {
+      const { data: expectedTotes } = await supabase
+        .from('totes')
+        .select('id, status, items')
+        .in('id', [...expectedToteIds])
+      for (const t of expectedTotes ?? []) {
+        if (t.status !== 'in_transit') receivedToday++
+        if ((t.items?.length ?? 0) > 0) fullToday++
+        else emptyToday++
+      }
+    }
 
-    // Count pending totes in pick lists
+    const storedTotal = totes?.filter(t => t.status === 'stored').length ?? 0
+    const unstowed = totes?.filter(t => t.status === 'ready_to_stow').length ?? 0
+    const stowedToday = totes?.filter(t =>
+      t.status === 'stored' && t.last_scan_date && new Date(t.last_scan_date) >= startOfToday
+    ).length ?? 0
+
+    // Count pending totes in pick lists (used for the "totes needed" alert banner)
     let pendingPicks = 0
     for (const pl of pickLists ?? []) {
       const binsArr = pl.bins as { totes: { status: string }[] }[]
@@ -68,6 +101,7 @@ export default function WarehouseDashboard() {
         pendingPicks += b.totes.filter(t => t.status === 'pending').length
       }
     }
+    const pickListsInProgress = pickLists?.filter(pl => pl.status === 'in_progress').length ?? 0
 
     const totalCapacity = bins?.reduce((s, b) => s + b.capacity, 0) ?? 0
     const totalUsed = bins?.reduce((s, b) => s + b.current_count, 0) ?? 0
@@ -75,9 +109,14 @@ export default function WarehouseDashboard() {
 
     setStats({
       storedTotal,
-      inboundToday,
+      receivedToday,
+      expectedToday: expectedToteIds.size,
+      fullToday,
+      emptyToday,
+      stowedToday,
       unstowed,
       pendingPicks,
+      pickListsInProgress,
       binSpacesAvailable,
       driverErrors: errors?.length ?? 0,
       userRole: customer.role,
@@ -150,18 +189,39 @@ export default function WarehouseDashboard() {
       <section>
         <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Live Inventory</h2>
         <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: 'Stored in Warehouse', value: stats.storedTotal, emoji: '🏢', color: 'text-brand-blue' },
-            { label: 'Full Totes Inbound', value: stats.inboundToday, emoji: '🚐', color: 'text-yellow-600' },
-            { label: 'Unstowed — Need Bin', value: stats.unstowed, emoji: '⚠️', color: 'text-amber-600' },
-            { label: 'Pending Picks', value: stats.pendingPicks, emoji: '📋', color: 'text-blue-600' },
-          ].map(({ label, value, emoji, color }) => (
-            <div key={label} className="card text-center py-4">
-              <span className="text-2xl">{emoji}</span>
-              <p className={`font-black text-3xl mt-1 ${color}`}>{value}</p>
-              <p className="text-xs text-gray-500 mt-1 leading-tight">{label}</p>
-            </div>
-          ))}
+          <div className="card text-center py-4">
+            <span className="text-2xl">🏢</span>
+            <p className="font-black text-3xl mt-1 text-brand-blue">{stats.storedTotal}</p>
+            <p className="text-xs text-gray-500 mt-1 leading-tight">Stored in Warehouse</p>
+          </div>
+          <div className="card text-center py-4">
+            <span className="text-2xl">🚐</span>
+            <p className="font-black text-3xl mt-1 text-yellow-600">
+              {stats.receivedToday}
+              {stats.expectedToday > 0 && <span className="text-gray-400 text-lg font-semibold">/{stats.expectedToday}</span>}
+            </p>
+            <p className="text-xs text-gray-500 mt-1 leading-tight">
+              {stats.expectedToday > 0 ? 'Received Today' : 'No Pickups Scheduled'}
+            </p>
+            {stats.expectedToday > 0 && (
+              <p className="text-[10px] text-gray-400 mt-0.5">{stats.fullToday} full · {stats.emptyToday} empty</p>
+            )}
+          </div>
+          <div className="card text-center py-4">
+            <span className="text-2xl">⚠️</span>
+            <p className="font-black text-3xl mt-1 text-amber-600">{stats.unstowed}</p>
+            <p className="text-xs text-gray-500 mt-1 leading-tight">Unstowed — Need Bin</p>
+          </div>
+          <div className="card text-center py-4">
+            <span className="text-2xl">✅</span>
+            <p className="font-black text-3xl mt-1 text-green-600">{stats.stowedToday}</p>
+            <p className="text-xs text-gray-500 mt-1 leading-tight">Stowed Today</p>
+          </div>
+          <div className="card text-center py-4">
+            <span className="text-2xl">📋</span>
+            <p className="font-black text-3xl mt-1 text-blue-600">{stats.pickListsInProgress}</p>
+            <p className="text-xs text-gray-500 mt-1 leading-tight">Pick Lists In Progress</p>
+          </div>
         </div>
 
         {/* Bin spaces — full width */}
@@ -177,7 +237,7 @@ export default function WarehouseDashboard() {
             onClick={() => router.push('/warehouse/reports?tab=bins')}
             className="ml-auto flex items-center gap-1 text-xs text-brand-blue font-semibold hover:underline"
           >
-            View Map <ArrowRight className="w-3 h-3" />
+            View Bins <ArrowRight className="w-3 h-3" />
           </button>
         </div>
       </section>

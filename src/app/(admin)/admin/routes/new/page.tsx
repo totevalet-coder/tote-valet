@@ -156,7 +156,8 @@ export default function NewRoutePage() {
         <ChevronLeft className="w-4 h-4" /> Back to Routes
       </button>
 
-      <h1 className="font-black text-2xl text-brand-navy">New Route</h1>
+      <h1 className="font-black text-2xl text-brand-navy">Generate Routes</h1>
+      <p className="text-sm text-gray-500 -mt-3">Manual route builder — batch auto-routing logic is still being scoped.</p>
 
       {/* Route details */}
       <div className="card space-y-4">
