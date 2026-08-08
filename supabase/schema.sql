@@ -508,13 +508,13 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 --   updated_at      timestamptz not null default now()
 -- );
 
--- ⏳ PENDING — tote_requests.completed_at (Orders "Date Delivered" tracking,
--- added 2026-08-08). The driver's stop-completion flow now sets status =
--- 'complete' + this timestamp automatically once the linked route stop is
--- completed (normal or force-complete) — see order_ref on RouteStop in
--- database.ts and completeStop()/handleForceComplete() in
--- driver/stop/[routeId]/[stopNum]/page.tsx. Run in the Supabase SQL editor,
--- then flip this to ✅ Done.
+-- ✅ Done — tote_requests.completed_at (Orders "Date Delivered" tracking,
+-- added 2026-08-08, migration applied by user same day). The driver's
+-- stop-completion flow sets status = 'complete' + this timestamp
+-- automatically once the linked route stop is completed (normal or
+-- force-complete) — see order_ref on RouteStop in database.ts and
+-- completeStop()/handleForceComplete() in
+-- driver/stop/[routeId]/[stopNum]/page.tsx.
 --
 -- ALTER TABLE tote_requests ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 
