@@ -41,10 +41,18 @@ export async function generatePickList(supabase: SupabaseClient): Promise<Genera
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([bin_id, toteList]) => ({ bin_id, totes: toteList }))
 
+  // pick_lists.generated_by is a foreign key to customers(id), NOT the
+  // Supabase auth user id (auth.users.id) — those are two different UUIDs
+  // in this schema (customers has its own id, plus a separate auth_id FK).
+  // Passing the raw auth id here violates the FK constraint.
   const { data: userData } = await supabase.auth.getUser()
+  if (!userData.user) return { ok: false, error: 'Not logged in.' }
+  const { data: me } = await supabase.from('customers').select('id').eq('auth_id', userData.user.id).single()
+  if (!me) return { ok: false, error: 'Could not find your customer record.' }
+
   const { error } = await supabase.from('pick_lists').insert({
     id,
-    generated_by: userData.user?.id ?? 'admin',
+    generated_by: me.id,
     generated_at: now.toISOString(),
     status: 'ready',
     assigned_to: null,
