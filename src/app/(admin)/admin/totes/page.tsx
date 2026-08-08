@@ -198,6 +198,7 @@ export default function AdminTotesPage() {
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Name</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Customer</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Location</th>
+                  <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Contents</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Last Scan</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Status</th>
                   <th className="px-4 py-3"></th>
@@ -222,6 +223,13 @@ export default function AdminTotesPage() {
                         {t.bin_location ? (
                           <span className="font-semibold text-brand-navy bg-gray-100 rounded px-1.5 py-0.5">{t.bin_location}</span>
                         ) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {(t.items?.length ?? 0) > 0 ? (
+                          <span className="status-pill text-[10px] bg-blue-100 text-blue-700">Full ({t.items!.length})</span>
+                        ) : (
+                          <span className="status-pill text-[10px] bg-gray-100 text-gray-500">Empty</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{formatDate(t.last_scan_date) ?? '—'}</td>
                       <td className="px-4 py-3">

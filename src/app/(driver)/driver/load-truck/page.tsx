@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
@@ -26,10 +26,7 @@ export default function LoadTruckPage() {
   const router = useRouter()
   const supabase = createClient()
   const [route, setRoute] = useState<Route | null>(null)
-  const [deliveryStops, setDeliveryStops] = useState<DeliveryStopInfo[]>([])
   const [loadedTotes, setLoadedTotes] = useState<LoadedTote[]>([])
-  // How many generic empties have been fulfilled per stop so far, keyed by stop_number
-  const [genericLoadedByStop, setGenericLoadedByStop] = useState<Record<number, number>>({})
   const [scanError, setScanError] = useState('')
   const [scanning, setScanning] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -55,30 +52,38 @@ export default function LoadTruckPage() {
       .order('created_at', { ascending: false })
       .limit(1)
 
-    if (routes && routes.length > 0) {
-      const r = routes[0] as Route
-      setRoute(r)
-
-      const stops = r.stops as RouteStop[]
-      const info: DeliveryStopInfo[] = []
-      for (const stop of stops) {
-        if (stop.type !== 'delivery') continue
-        info.push({
-          stopNumber: stop.stop_number,
-          customerId: stop.customer_id,
-          customerName: stop.customer_name,
-          knownToteIds: stop.tote_ids.map((toteId, i) => ({ toteId, sealNumber: stop.seal_numbers?.[i] ?? null })),
-          expectedEmptyCount: stop.expected_empty_count ?? 0,
-        })
-      }
-      setDeliveryStops(info)
-    }
+    if (routes && routes.length > 0) setRoute(routes[0] as Route)
     setLoading(false)
   }, [supabase])
 
   useEffect(() => { loadData() }, [loadData])
 
-  const totalExpected = deliveryStops.reduce((n, s) => n + s.knownToteIds.length + s.expectedEmptyCount, 0)
+  // Derived live from `route` (not a separate snapshot state) -- this was the
+  // actual bug: a previous version computed this once at page load and never
+  // updated it as scans succeeded within the same session, so a tote that had
+  // already been registered and persisted to the route mid-session stopped
+  // being recognized as "known" and got wrongly rejected as not-on-route.
+  const deliveryStops = useMemo<DeliveryStopInfo[]>(() => {
+    if (!route) return []
+    const info: DeliveryStopInfo[] = []
+    for (const stop of route.stops as RouteStop[]) {
+      if (stop.type !== 'delivery') continue
+      info.push({
+        stopNumber: stop.stop_number,
+        customerId: stop.customer_id,
+        customerName: stop.customer_name,
+        knownToteIds: stop.tote_ids.map((toteId, i) => ({ toteId, sealNumber: stop.seal_numbers?.[i] ?? null })),
+        expectedEmptyCount: stop.expected_empty_count ?? 0,
+      })
+    }
+    return info
+  }, [route])
+
+  // A stop's real total is whichever is larger -- tote_ids already fills in
+  // as expectedEmptyCount gets satisfied, so counting both in full would
+  // double-count. Also fixes a bug: the old formula always added the full
+  // expectedEmptyCount on top of knownToteIds even after they'd converged.
+  const totalExpected = deliveryStops.reduce((n, s) => n + Math.max(s.knownToteIds.length, s.expectedEmptyCount), 0)
 
   async function handleScan(val: string) {
     setScanError('')
@@ -87,7 +92,8 @@ export default function LoadTruckPage() {
       return
     }
 
-    // 1. Does this match a specific tote already assigned to a stop?
+    // 1. Does this match a tote already on a stop -- either pre-assigned, or
+    // registered earlier in this same session (now live via the useMemo above)?
     for (const stop of deliveryStops) {
       const known = stop.knownToteIds.find(t => t.toteId === val)
       if (known) {
@@ -96,9 +102,8 @@ export default function LoadTruckPage() {
       }
     }
 
-    // 2. Not a known tote — does any stop still need generic empties? First
-    // stop (in route order) with remaining demand claims this scan.
-    const target = deliveryStops.find(s => (genericLoadedByStop[s.stopNumber] ?? 0) < s.expectedEmptyCount)
+    // 2. Not known — does any stop still need more generic empties?
+    const target = deliveryStops.find(s => s.knownToteIds.length < s.expectedEmptyCount)
     if (!target) {
       setScanError(`${val} is not on today's route, and no delivery on this route still needs empty totes.`)
       return
@@ -129,17 +134,22 @@ export default function LoadTruckPage() {
     }
 
     // Persist this tote onto the route's stop record so it's tracked for
-    // real (stop detail, force-complete, etc. all read stops.tote_ids).
-    if (route) {
-      const stops = route.stops as RouteStop[]
-      const updatedStops = stops.map(s =>
-        s.stop_number === target.stopNumber ? { ...s, tote_ids: [...s.tote_ids, val] } : s
-      )
-      const { error: routeError } = await supabase.from('routes').update({ stops: updatedStops }).eq('id', route.id)
-      if (!routeError) setRoute(prev => prev ? { ...prev, stops: updatedStops } : prev)
+    // real (stop detail, force-complete, etc. all read stops.tote_ids). Only
+    // count it as loaded if this actually succeeds -- previously local state
+    // updated regardless, so a failed write here could look like success.
+    if (!route) { setScanning(false); return }
+    const stops = route.stops as RouteStop[]
+    const updatedStops = stops.map(s =>
+      s.stop_number === target.stopNumber ? { ...s, tote_ids: [...s.tote_ids, val] } : s
+    )
+    const { error: routeError } = await supabase.from('routes').update({ stops: updatedStops }).eq('id', route.id)
+    if (routeError) {
+      setScanError(`Registered ${val} but couldn't attach it to the route: ${routeError.message}. Try scanning it again.`)
+      setScanning(false)
+      return
     }
+    setRoute(prev => prev ? { ...prev, stops: updatedStops } : prev)
 
-    setGenericLoadedByStop(prev => ({ ...prev, [target.stopNumber]: (prev[target.stopNumber] ?? 0) + 1 }))
     setLoadedTotes(prev => [...prev, { toteId: val, sealNumber: null, customerName: target.customerName, generic: true }])
     setScanning(false)
   }
@@ -278,7 +288,7 @@ export default function LoadTruckPage() {
                 ))
             )}
             {deliveryStops.map(stop => {
-              const remaining = stop.expectedEmptyCount - (genericLoadedByStop[stop.stopNumber] ?? 0)
+              const remaining = stop.expectedEmptyCount - stop.knownToteIds.length
               if (remaining <= 0) return null
               return (
                 <div key={`generic-${stop.stopNumber}`} className="card flex items-center gap-3 border-2 border-dashed border-purple-200 bg-purple-50/50">
