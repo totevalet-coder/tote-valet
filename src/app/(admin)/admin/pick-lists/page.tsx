@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { PickList, PickListBin } from '@/types/database'
-import { ClipboardList, Plus, Loader2, CheckCircle2, Info } from 'lucide-react'
+import { ClipboardList, Plus, Loader2, CheckCircle2, Info, RefreshCw } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
 import { generatePickList } from '@/lib/pickLists'
 
@@ -33,13 +33,27 @@ function binRange(pl: PickList) {
 export default function AdminPickListsPage() {
   const router = useRouter()
   const supabase = createClient()
+  const todayStr = new Date().toISOString().split('T')[0]
   const [lists, setLists] = useState<EnrichedPickList[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(todayStr)
+  const [showAll, setShowAll] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [generatedId, setGeneratedId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    const { data } = await supabase.from('pick_lists').select('*').order('generated_at', { ascending: false })
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true); else setRefreshing(true)
+
+    let q = supabase.from('pick_lists').select('*').order('generated_at', { ascending: false })
+    if (showAll) {
+      q = q.limit(50)
+    } else {
+      const start = `${selectedDate}T00:00:00.000Z`
+      const end = new Date(new Date(start).getTime() + 86400000).toISOString()
+      q = q.gte('generated_at', start).lt('generated_at', end)
+    }
+    const { data } = await q
     const rows = (data ?? []) as PickList[]
 
     const assignedIds = [...new Set(rows.map(r => r.assigned_to).filter((v): v is string => !!v))]
@@ -51,7 +65,8 @@ export default function AdminPickListsPage() {
 
     setLists(rows.map(r => ({ ...r, assignedName: r.assigned_to ? (nameMap[r.assigned_to] ?? 'Unknown') : null })))
     setLoading(false)
-  }, [supabase])
+    setRefreshing(false)
+  }, [supabase, selectedDate, showAll])
 
   useEffect(() => { load() }, [load])
 
@@ -82,14 +97,43 @@ export default function AdminPickListsPage() {
     <div className="p-6 space-y-6 max-w-[1400px]">
       <div className="flex items-center justify-between">
         <h1 className="font-black text-2xl text-brand-navy">Pick</h1>
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className="flex items-center gap-1.5 bg-brand-navy text-white rounded-xl px-4 py-2.5 text-sm font-bold hover:bg-blue-900 transition-colors disabled:opacity-60"
-        >
-          {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          {generating ? 'Generating…' : 'Generate Pick List'}
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => { setSelectedDate(e.target.value); setShowAll(false) }}
+            disabled={showAll}
+            className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          />
+          {selectedDate !== todayStr && !showAll && (
+            <button
+              onClick={() => setSelectedDate(todayStr)}
+              className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-500 hover:border-gray-300"
+            >
+              Today
+            </button>
+          )}
+          <button
+            onClick={() => setShowAll(v => !v)}
+            className={`text-xs font-bold rounded-xl px-3 py-2.5 border-2 transition-colors ${showAll ? 'border-brand-navy bg-brand-navy text-white' : 'border-gray-200 text-gray-500'}`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => load(true)} disabled={refreshing}
+            className="w-10 h-10 rounded-xl border-2 border-gray-200 flex items-center justify-center text-gray-500 hover:border-brand-blue hover:text-brand-blue transition-colors disabled:opacity-40"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="flex items-center gap-1.5 bg-brand-navy text-white rounded-xl px-4 py-2.5 text-sm font-bold hover:bg-blue-900 transition-colors disabled:opacity-60"
+          >
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {generating ? 'Generating…' : 'Generate Pick List'}
+          </button>
+        </div>
       </div>
 
       {generatedId && (
@@ -116,11 +160,15 @@ export default function AdminPickListsPage() {
 
       {/* Table */}
       <div>
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Pick Lists — Today</h2>
+        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+          Pick Lists — {showAll ? 'All' : selectedDate === todayStr ? 'Today' : selectedDate}
+        </h2>
         {lists.length === 0 ? (
           <div className="text-center py-16">
             <ClipboardList className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="font-bold text-gray-400 text-lg">No Pick Lists Yet</p>
+            <p className="font-bold text-gray-400 text-lg">
+              No Pick Lists {showAll ? 'Found' : selectedDate === todayStr ? 'Yet' : `on ${selectedDate}`}
+            </p>
           </div>
         ) : (
           <div className="card p-0 overflow-hidden">

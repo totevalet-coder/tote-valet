@@ -27,18 +27,19 @@ const STATUS_STYLES: Record<string, string> = {
 export default function AdminRoutesPage() {
   const router = useRouter()
   const supabase = createClient()
+  const todayStr = new Date().toISOString().split('T')[0]
   const [routes, setRoutes] = useState<EnrichedRoute[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(todayStr)
   const [showAll, setShowAll] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); else setRefreshing(true)
 
-    const today = new Date().toISOString().split('T')[0]
     let q = supabase.from('routes').select('*').order('created_at', { ascending: false })
-    q = showAll ? q.limit(50) : q.eq('date', today)
+    q = showAll ? q.limit(50) : q.eq('date', selectedDate)
 
     const { data: routeData } = await q
     if (!routeData) { setLoading(false); setRefreshing(false); return }
@@ -68,7 +69,7 @@ export default function AdminRoutesPage() {
     setRoutes(enriched)
     setLoading(false)
     setRefreshing(false)
-  }, [supabase, showAll])
+  }, [supabase, showAll, selectedDate])
 
   useEffect(() => { load() }, [load])
 
@@ -96,11 +97,26 @@ export default function AdminRoutesPage() {
       <div className="flex items-center justify-between">
         <h1 className="font-black text-2xl text-brand-navy">Routes</h1>
         <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => { setSelectedDate(e.target.value); setShowAll(false) }}
+            disabled={showAll}
+            className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          />
+          {selectedDate !== todayStr && !showAll && (
+            <button
+              onClick={() => setSelectedDate(todayStr)}
+              className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-500 hover:border-gray-300"
+            >
+              Today
+            </button>
+          )}
           <button
             onClick={() => setShowAll(v => !v)}
             className={`text-xs font-bold rounded-xl px-3 py-2.5 border-2 transition-colors ${showAll ? 'border-brand-navy bg-brand-navy text-white' : 'border-gray-200 text-gray-500'}`}
           >
-            {showAll ? 'All Routes' : 'Today'}
+            All Routes
           </button>
           <button
             onClick={() => load(true)} disabled={refreshing}
@@ -128,7 +144,9 @@ export default function AdminRoutesPage() {
       {routes.length === 0 ? (
         <div className="text-center py-16">
           <Navigation className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-bold text-gray-400 text-lg">No routes {showAll ? 'found' : 'today'}</p>
+          <p className="font-bold text-gray-400 text-lg">
+            No routes {showAll ? 'found' : selectedDate === todayStr ? 'today' : `on ${selectedDate}`}
+          </p>
           <button onClick={() => router.push('/admin/routes/new')} className="mt-3 text-brand-blue text-sm font-semibold">
             + Generate Routes
           </button>
