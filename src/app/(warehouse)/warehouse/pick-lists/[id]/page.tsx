@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { PickList, PickListBin, PickListTote } from '@/types/database'
 import { ScanLine, CheckCircle2, AlertTriangle, Package, ChevronLeft, ArrowRight } from 'lucide-react'
 
-type PickPhase = 'bin' | 'totes' | 'complete'
+type PickPhase = 'bin' | 'totes' | 'dropzone' | 'complete'
 
 export default function PickListDetailPage() {
   const router = useRouter()
@@ -23,6 +23,15 @@ export default function PickListDetailPage() {
   const [scanValue, setScanValue] = useState('')
   const [scanError, setScanError] = useState('')
   const [started, setStarted] = useState(false)
+
+  // Drop zone confirmation — required before a pick list can actually
+  // finish, so there's a real record of where the picked totes physically
+  // ended up (previously the list just silently flipped to "complete" the
+  // instant the last tote was scanned, with no location captured at all).
+  const [dropZoneValue, setDropZoneValue] = useState('')
+  const [dzScanValue, setDzScanValue] = useState('')
+  const [dzError, setDzError] = useState('')
+  const [dzSaving, setDzSaving] = useState(false)
 
   // Local copy of bins for progress tracking
   const [bins, setBins] = useState<PickListBin[]>([])
@@ -54,16 +63,54 @@ export default function PickListDetailPage() {
 
   const currentBin = bins[binIdx]
   const pendingInCurrentBin = currentBin?.totes.filter(t => t.status === 'pending') ?? []
-  const allBinsDone = bins.every(b => b.totes.every(t => t.status === 'picked'))
 
+  // Only tracks in-progress scanning — deliberately never flips status to
+  // 'complete' itself, even once every tote is picked. That only happens
+  // in completePickList() below, gated on the drop zone scan, so the DB
+  // record can't say "complete" before a location is actually confirmed.
   async function saveProgress(updatedBins: PickListBin[]) {
-    const allPicked = updatedBins.every(b => b.totes.every(t => t.status === 'picked'))
     await supabase.from('pick_lists').update({
       bins: updatedBins,
-      status: allPicked ? 'complete' : 'in_progress',
+      status: 'in_progress',
       assigned_to: staffId || undefined,
-      completed_at: allPicked ? new Date().toISOString() : undefined,
     }).eq('id', id)
+  }
+
+  // Fires once the drop zone barcode is scanned — writes it onto every
+  // picked tote's bin_location (same field/pattern driver/return already
+  // uses for "where this tote currently physically sits") and only then
+  // marks the pick list itself complete. Returns an error message on
+  // failure instead of failing silently.
+  async function completePickList(dropZoneVal: string): Promise<string | null> {
+    const allToteIds = bins.flatMap(b => b.totes.map(t => t.tote_id))
+    const toteResults = await Promise.all(
+      allToteIds.map(toteId => supabase.from('totes').update({ bin_location: dropZoneVal }).eq('id', toteId))
+    )
+    const toteErr = toteResults.find(r => r.error)?.error
+    if (toteErr) return `Couldn't save drop zone on totes: ${toteErr.message}`
+
+    const { error: plErr } = await supabase.from('pick_lists').update({
+      bins,
+      status: 'complete',
+      assigned_to: staffId || undefined,
+      completed_at: new Date().toISOString(),
+    }).eq('id', id)
+    if (plErr) return `Couldn't mark pick list complete: ${plErr.message}`
+
+    return null
+  }
+
+  async function handleDropZoneScan(e: React.FormEvent) {
+    e.preventDefault()
+    const val = dzScanValue.trim().toUpperCase()
+    if (!val) return
+    setDzError('')
+    setDzSaving(true)
+    const err = await completePickList(val)
+    setDzSaving(false)
+    if (err) { setDzError(err); return }
+    setDropZoneValue(val)
+    setPhase('complete')
   }
 
   function handleScan(e: React.FormEvent) {
@@ -121,7 +168,7 @@ export default function PickListDetailPage() {
       setPhase('bin')
       setScanError('')
     } else {
-      setPhase('complete')
+      setPhase('dropzone')
     }
   }
 
@@ -135,7 +182,11 @@ export default function PickListDetailPage() {
   }
 
   // ─── Complete Screen ────────────────────────────────────────────────────
-  if (phase === 'complete' || allBinsDone) {
+  // Deliberately gated on phase alone, NOT `allBinsDone` — every tote being
+  // picked used to jump straight here (bypassing the drop zone scan below
+  // entirely, and even the "Complete Pick List" button) since allBinsDone
+  // is derived straight from bins state with no phase check of its own.
+  if (phase === 'complete') {
     return (
       <div className="px-5 pt-6 pb-6 space-y-5">
         <button onClick={() => router.push('/warehouse/pick-lists')} className="flex items-center gap-2 text-gray-500 text-sm">
@@ -161,12 +212,60 @@ export default function PickListDetailPage() {
           ))}
         </div>
         <div className="bg-brand-blue/5 border border-brand-blue/20 rounded-2xl px-4 py-3">
-          <p className="text-xs font-bold text-brand-navy mb-1">Totes auto-added to Sort Drop Zone</p>
+          <p className="text-xs font-bold text-brand-navy mb-1">Totes placed in Drop Zone {dropZoneValue}</p>
           <p className="text-xs text-gray-500">All {totalTotes} totes are now available for sorting and dispatch.</p>
         </div>
         <button onClick={() => router.push('/warehouse/pick-lists')} className="btn-primary w-full">
           Back to Pick Lists
         </button>
+      </div>
+    )
+  }
+
+  // ─── Drop Zone Confirmation ─────────────────────────────────────────────
+  // Required before the pick list can actually complete — accepts any
+  // scanned value (no fixed drop-zone master list exists to validate
+  // against, same as driver/return's zone scan), but requiring SOME scan
+  // means there's a real record of where these totes physically landed
+  // instead of an implicit, unconfirmed "picked" status.
+  if (phase === 'dropzone') {
+    return (
+      <div className="px-5 pt-6 pb-6 space-y-5">
+        <button onClick={() => router.push('/warehouse/pick-lists')} className="flex items-center gap-2 text-gray-500 text-sm">
+          <ChevronLeft className="w-4 h-4" /> Back
+        </button>
+
+        <div className="bg-brand-navy rounded-2xl px-5 py-6 text-center text-white">
+          <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-green-400" />
+          <p className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">All {totalTotes} Totes Picked</p>
+          <h2 className="font-black text-2xl">Scan Drop Zone</h2>
+          <p className="text-white/60 text-sm mt-2">Confirm where these totes were placed to finish.</p>
+        </div>
+
+        {dzError && (
+          <div className="bg-yellow-50 border border-yellow-300 rounded-xl px-3 py-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-yellow-700">{dzError}</p>
+          </div>
+        )}
+
+        <form onSubmit={handleDropZoneScan} className="flex gap-2">
+          <div className="relative flex-1">
+            <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              autoFocus
+              type="text"
+              value={dzScanValue}
+              onChange={e => { setDzScanValue(e.target.value); setDzError('') }}
+              placeholder="Scan drop zone barcode…"
+              disabled={dzSaving}
+              className="input-field pl-9 text-sm"
+            />
+          </div>
+          <button type="submit" disabled={dzSaving || !dzScanValue.trim()} className="bg-brand-navy text-white rounded-xl px-4 font-semibold text-sm disabled:opacity-40">
+            {dzSaving ? 'Saving…' : 'OK'}
+          </button>
+        </form>
       </div>
     )
   }
