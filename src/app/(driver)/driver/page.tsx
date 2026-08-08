@@ -27,7 +27,11 @@ export default function DriverRoutePage() {
       .eq('auth_id', userData.user.id)
       .single()
 
-    if (!customer || customer.role !== 'driver') {
+    // Admins previewing via "View As" should see this page too — the layout's
+    // useRoleGuard already lets them in, this page just needs to not
+    // separately kick them back out. A real (non-admin, non-driver) role
+    // still gets bounced.
+    if (!customer || (customer.role !== 'driver' && customer.role !== 'admin')) {
       router.push('/dashboard')
       return
     }
