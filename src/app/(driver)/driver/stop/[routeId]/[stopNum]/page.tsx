@@ -47,6 +47,14 @@ export default function StopDetailPage() {
   const [currentToteIdx, setCurrentToteIdx] = useState(0)
   const [toteStates, setToteStates] = useState<ToteState[]>([])
   const [scanError, setScanError] = useState('')
+  const [scanBusy, setScanBusy] = useState(false)
+
+  // Generic-empty deliveries (expected_empty_count set at route-build time):
+  // any empty tote satisfies any slot -- no fixed identity/order to match,
+  // unlike pickups and full-tote deliveries which are a specific customer's
+  // actual belongings and must match exactly.
+  const isGenericEmptyStop = !!stop && stop.type === 'delivery' && !!stop.expected_empty_count
+  const [genericVerifiedIds, setGenericVerifiedIds] = useState<string[]>([])
 
   // Force complete state
   const [showForceComplete, setShowForceComplete] = useState(false)
@@ -111,11 +119,55 @@ export default function StopDetailPage() {
     setScanning(true)
     setScanPhase('tote')
     setCurrentToteIdx(0)
+    setGenericVerifiedIds([])
+  }
+
+  async function handleGenericScan(val: string) {
+    if (!stop) return
+    setScanError('')
+    const target = stop.tote_ids.length
+
+    if (genericVerifiedIds.includes(val)) {
+      setScanError(`${val} already scanned.`)
+      return
+    }
+
+    setScanBusy(true)
+    const { data: tote } = await supabase.from('totes').select('id, customer_id, items').eq('id', val).maybeSingle()
+
+    if (!tote) {
+      setScanError(`${val} isn't a registered tote — it needs to be loaded onto the truck first.`)
+      setScanBusy(false)
+      return
+    }
+    if (((tote.items as unknown[] | null)?.length ?? 0) > 0) {
+      setScanError(`${val} isn't empty — can't use a packed tote for an empty-tote delivery.`)
+      setScanBusy(false)
+      return
+    }
+    // Empty totes are fungible — whichever ones physically came off the
+    // truck belong to this customer now, regardless of which customer they
+    // were originally registered to.
+    if (tote.customer_id !== stop.customer_id) {
+      await supabase.from('totes').update({ customer_id: stop.customer_id }).eq('id', val)
+    }
+
+    const updated = [...genericVerifiedIds, val]
+    setGenericVerifiedIds(updated)
+    setScanBusy(false)
+    if (updated.length >= target) {
+      void completeStop(undefined, updated)
+    }
   }
 
   function handleScan(val: string) {
     if (!stop) return
     setScanError('')
+
+    if (isGenericEmptyStop) {
+      void handleGenericScan(val)
+      return
+    }
 
     const currentTote = toteStates[currentToteIdx]
 
@@ -192,9 +244,8 @@ export default function StopDetailPage() {
     await supabase.from('totes').update({ status: 'error' }).eq('id', toteId)
   }
 
-  async function completeStop(states?: ToteState[]) {
+  async function completeStop(states?: ToteState[], genericIds?: string[]) {
     if (!route || !stop) return
-    const finalStates = states ?? toteStates
 
     // Re-fetch route from DB to get the latest stop completion state
     const { data: freshRoute } = await supabase
@@ -204,18 +255,24 @@ export default function StopDetailPage() {
       .single()
     const currentRoute = (freshRoute as Route) ?? route
 
-    const updatedStops = (currentRoute.stops as RouteStop[]).map(s =>
-      s.stop_number === stopNum ? { ...s, completed: true } : s
-    )
+    const deliveredToteIds = isGenericEmptyStop
+      ? (genericIds ?? genericVerifiedIds)
+      : (states ?? toteStates).filter(t => t.state === 'verified').map(t => t.toteId)
+
+    const updatedStops = (currentRoute.stops as RouteStop[]).map(s => {
+      if (s.stop_number !== stopNum) return s
+      // Generic-empty stops: record what actually went out the door, which
+      // may differ from what was loaded (any empty tote can fill any slot).
+      return isGenericEmptyStop ? { ...s, completed: true, tote_ids: deliveredToteIds } : { ...s, completed: true }
+    })
 
     // Update tote statuses
-    const verifiedTotes = finalStates.filter(t => t.state === 'verified')
-    for (const t of verifiedTotes) {
+    for (const toteId of deliveredToteIds) {
       const newStatus = stop.type === 'pickup' ? 'in_transit' : 'empty_at_customer'
       await supabase.from('totes').update({
         status: newStatus,
         last_scan_date: new Date().toISOString(),
-      }).eq('id', t.toteId)
+      }).eq('id', toteId)
     }
 
     // Update route stop
@@ -300,13 +357,15 @@ export default function StopDetailPage() {
     )
   }
 
-  const allVerified = toteStates.length > 0 && toteStates.every(t => t.state === 'verified' || t.state === 'error')
+  const allVerified = isGenericEmptyStop
+    ? !!stop && genericVerifiedIds.length >= stop.tote_ids.length
+    : toteStates.length > 0 && toteStates.every(t => t.state === 'verified' || t.state === 'error')
   const currentTote = toteStates[currentToteIdx]
 
   // ─── Success Screen ───────────────────────────────────────────────────────
   if (showSuccess) {
-    const verified = toteStates.filter(t => t.state === 'verified').length
-    const errors = toteStates.filter(t => t.state === 'error').length
+    const verified = isGenericEmptyStop ? genericVerifiedIds.length : toteStates.filter(t => t.state === 'verified').length
+    const errors = isGenericEmptyStop ? 0 : toteStates.filter(t => t.state === 'error').length
 
     return (
       <div className="px-5 pt-6 pb-6 space-y-5">
@@ -402,6 +461,33 @@ export default function StopDetailPage() {
         <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
           Totes ({stop.tote_ids.length})
         </h2>
+        {isGenericEmptyStop ? (
+          <div className="space-y-2">
+            {genericVerifiedIds.map(toteId => (
+              <div key={toteId} className="card flex items-center gap-3 border-green-200 bg-green-50">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-green-100">
+                  <CheckCircle2 className="w-4 h-4 text-green-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-sm font-mono text-brand-navy">{toteId}</p>
+                  <p className="text-xs text-gray-400">Empty tote</p>
+                </div>
+                <span className="status-pill text-xs bg-green-100 text-green-700">Verified</span>
+              </div>
+            ))}
+            {Array.from({ length: Math.max(0, stop.tote_ids.length - genericVerifiedIds.length) }).map((_, i) => (
+              <div key={`pending-${i}`} className="card flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100">
+                  <Package className="w-4 h-4 text-gray-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-400">Any empty tote</p>
+                </div>
+                <span className="status-pill text-xs bg-gray-100 text-gray-500">Pending</span>
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className="space-y-2">
           {toteStates.map((t) => (
             <div key={t.toteId} className={`card flex items-center gap-3 ${
@@ -437,10 +523,36 @@ export default function StopDetailPage() {
             </div>
           ))}
         </div>
+        )}
       </section>
 
-      {/* Scanning workflow */}
-      {scanning && currentTote && !allVerified && (
+      {/* Scanning workflow — generic empty totes (any barcode, any order) */}
+      {scanning && isGenericEmptyStop && !allVerified && (
+        <div className="card border-2 border-purple-300 bg-purple-50 space-y-4">
+          <div className="text-center pt-2">
+            <p className="font-black text-3xl tracking-tight text-purple-600">Scan Any Empty Tote</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mt-1">
+              {genericVerifiedIds.length} of {stop.tote_ids.length}
+            </p>
+          </div>
+          <div className="rounded-2xl px-5 py-4 text-center bg-purple-700">
+            <p className="text-white/70 text-xs font-medium uppercase tracking-wider mb-1">Remaining</p>
+            <p className="text-white font-black text-2xl tracking-tight">
+              {stop.tote_ids.length - genericVerifiedIds.length} empty tote{stop.tote_ids.length - genericVerifiedIds.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+          {scanError && (
+            <div className="bg-yellow-50 border border-yellow-300 rounded-xl px-3 py-3 flex items-start gap-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-yellow-700 font-medium">{scanError}</p>
+            </div>
+          )}
+          <BarcodeScanInput onScan={handleScan} placeholder="Or enter tote ID…" large disabled={scanBusy} />
+        </div>
+      )}
+
+      {/* Scanning workflow — specific pre-assigned totes (pickups, full-tote deliveries) */}
+      {scanning && !isGenericEmptyStop && currentTote && !allVerified && (
         <div className="card border-2 border-brand-blue/30 bg-brand-blue/5 space-y-4">
           {/* Phase label — large and obvious */}
           <div className="text-center pt-2">
