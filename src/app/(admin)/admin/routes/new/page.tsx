@@ -199,6 +199,7 @@ function NewRouteContent() {
       notes: s.notes || undefined,
       completed: false,
       force_completed: false,
+      order_ref: s.orderRef,
     }))
 
     const { error } = await supabase.from('routes').insert({

@@ -229,6 +229,21 @@ export default function StopDetailPage() {
     }
   }
 
+  // Fires whenever a stop transitions to completed (normal or force) —
+  // writes the "delivered" moment back to the order that produced this stop,
+  // if any. Only tote_requests orders have anywhere to record it; legacy
+  // pickup_requested-flag orders (no tote_requests row) are left as-is,
+  // consistent with their already-reduced tracking elsewhere in Orders.
+  // Best-effort: a failure here shouldn't block the stop, which already
+  // completed successfully.
+  async function completeLinkedOrder(s: RouteStop) {
+    if (s.order_ref?.source !== 'tote_request') return
+    await supabase.from('tote_requests').update({
+      status: 'complete',
+      completed_at: new Date().toISOString(),
+    }).eq('id', s.order_ref.sourceId)
+  }
+
   async function flagSealMismatch(toteId: string, expected: string | null, scanned: string) {
     const errId = `ERR-${Math.floor(10000 + Math.random() * 90000)}`
     await supabase.from('errors').insert({
@@ -288,6 +303,8 @@ export default function StopDetailPage() {
       ...(allDone && !hasPickups ? { completed_at: new Date().toISOString() } : {}),
     }).eq('id', routeId)
 
+    void completeLinkedOrder(stop)
+
     // Find next stop
     const next = updatedStops.find(s => !s.completed)
     setNextStop(next ?? null)
@@ -322,6 +339,8 @@ export default function StopDetailPage() {
       force_complete_count: (route!.force_complete_count ?? 0) + 1,
       error_count: (route!.error_count ?? 0) + 1,
     }).eq('id', routeId)
+
+    if (stop) void completeLinkedOrder(stop)
 
     const next = updatedStops.find(s => !s.completed)
     setNextStop(next ?? null)

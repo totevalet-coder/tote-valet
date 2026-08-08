@@ -20,8 +20,30 @@ interface OrderRow {
   toteIds: string[]
   quantity: number | null
   preferredDate: string | null
+  // Date placed: tote_requests.created_at. Legacy pickup-flag orders (no
+  // tote_requests row) have nowhere this is tracked — null for those.
+  datePlaced: string | null
+  // Date delivered: tote_requests.completed_at, set by the driver's
+  // stop-completion flow once the linked route stop actually completes
+  // (see order_ref on RouteStop). Null until then, and permanently null for
+  // legacy pickup-flag orders (same gap as datePlaced).
+  dateDelivered: string | null
   fullCount?: number
   emptyCount?: number
+}
+
+type DateField = 'placed' | 'preferred' | 'delivered'
+const DATE_FIELD_LABEL: Record<DateField, string> = {
+  placed: 'Date Placed', preferred: 'Preferred Date', delivered: 'Date Delivered',
+}
+// Consistent with the UTC-day convention used elsewhere in the app (Routes,
+// Pick) — good enough given nothing here is timezone-critical.
+function toUTCDateStr(iso: string | null): string | null {
+  return iso ? iso.split('T')[0] : null
+}
+function fmtDate(dateStr: string | null): string {
+  if (!dateStr) return '—'
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 const TYPE_META: Record<OrderType, { label: string; icon: typeof Package; color: string }> = {
@@ -49,10 +71,17 @@ export default function OrdersPage() {
   const router = useRouter()
   const supabase = createClient()
 
+  const todayStr = new Date().toISOString().split('T')[0]
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState<OrderType | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
+  // Unlike Routes/Pick, Orders is a workqueue people expect to see in full
+  // by default — so the date filter starts off ("All Dates") rather than
+  // defaulting to Today.
+  const [dateFilterOn, setDateFilterOn] = useState(false)
+  const [dateField, setDateField] = useState<DateField>('placed')
+  const [selectedDate, setSelectedDate] = useState(todayStr)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showExport, setShowExport] = useState(false)
 
@@ -61,18 +90,19 @@ export default function OrdersPage() {
     const [pickupRes, requestsRes] = await Promise.all([
       supabase.from('totes').select('id, tote_name, customer_id, customers(name, address)').eq('pickup_requested', true),
       supabase.from('tote_requests')
-        .select('id, type, quantity, tote_ids, preferred_date, customer_id, status, customers(name, address)')
+        .select('id, type, quantity, tote_ids, preferred_date, customer_id, status, created_at, completed_at, customers(name, address)')
         .order('preferred_date', { ascending: true }),
     ])
 
     const rows: OrderRow[] = []
 
-    const requests = (requestsRes.data ?? []) as { id: string; type: string; quantity: number | null; tote_ids: string[] | null; preferred_date: string | null; customer_id: string; status: string; customers: { name: string; address: string | null } | null }[]
+    const requests = (requestsRes.data ?? []) as { id: string; type: string; quantity: number | null; tote_ids: string[] | null; preferred_date: string | null; customer_id: string; status: string; created_at: string; completed_at: string | null; customers: { name: string; address: string | null } | null }[]
     for (const r of requests) {
       rows.push({
         key: `request-${r.id}`, source: 'tote_request', sourceId: r.id, type: r.type as OrderType, status: toOrderStatus(r.status),
         customerId: r.customer_id, customerName: r.customers?.name ?? 'Unknown', customerAddress: r.customers?.address ?? null,
         toteIds: r.tote_ids ?? [], quantity: r.quantity, preferredDate: r.preferred_date,
+        datePlaced: r.created_at, dateDelivered: r.completed_at,
       })
     }
 
@@ -92,6 +122,7 @@ export default function OrdersPage() {
         key: `pickup-flag-${t.id}`, source: 'pickup_flag', sourceId: t.id, type: 'pickup', status: 'pending',
         customerId: t.customer_id, customerName: t.customers?.name ?? 'Unknown', customerAddress: t.customers?.address ?? null,
         toteIds: [t.id], quantity: null, preferredDate: null,
+        datePlaced: null, dateDelivered: null,
       })
     }
 
@@ -125,6 +156,13 @@ export default function OrdersPage() {
   const filtered = orders
     .filter(o => typeFilter === 'all' || o.type === typeFilter)
     .filter(o => statusFilter === 'all' || o.status === statusFilter)
+    .filter(o => {
+      if (!dateFilterOn) return true
+      const value = dateField === 'preferred' ? o.preferredDate
+        : dateField === 'placed' ? toUTCDateStr(o.datePlaced)
+        : toUTCDateStr(o.dateDelivered)
+      return value === selectedDate
+    })
 
   function toggleSelect(key: string) {
     setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
@@ -160,9 +198,12 @@ export default function OrdersPage() {
   }
 
   function exportCSV() {
-    const rows = [['Type', 'Customer', 'Address', 'Totes', 'Preferred Date', 'Status']]
+    const rows = [['Type', 'Customer', 'Address', 'Totes', 'Date Placed', 'Preferred Date', 'Date Delivered', 'Status']]
     for (const o of selectedOrders.length > 0 ? selectedOrders : filtered) {
-      rows.push([TYPE_META[o.type].label, o.customerName, o.customerAddress ?? '', String(o.toteIds.length || o.quantity || ''), o.preferredDate ?? '', STATUS_META[o.status].label])
+      rows.push([
+        TYPE_META[o.type].label, o.customerName, o.customerAddress ?? '', String(o.toteIds.length || o.quantity || ''),
+        toUTCDateStr(o.datePlaced) ?? '', o.preferredDate ?? '', toUTCDateStr(o.dateDelivered) ?? '', STATUS_META[o.status].label,
+      ])
     }
     const csv = rows.map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -184,7 +225,45 @@ export default function OrdersPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px]">
-      <h1 className="font-black text-2xl text-brand-navy">Orders</h1>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="font-black text-2xl text-brand-navy">Orders</h1>
+
+        {/* Date filter — Orders has three distinct date concepts, so pick
+            which one to filter by, then a normal date + Today/All control. */}
+        <div className="flex items-center gap-2">
+          <select
+            value={dateField}
+            onChange={e => setDateField(e.target.value as DateField)}
+            disabled={!dateFilterOn}
+            className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {(Object.keys(DATE_FIELD_LABEL) as DateField[]).map(f => (
+              <option key={f} value={f}>{DATE_FIELD_LABEL[f]}</option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => { setSelectedDate(e.target.value); setDateFilterOn(true) }}
+            disabled={!dateFilterOn}
+            className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          />
+          {dateFilterOn && selectedDate !== todayStr && (
+            <button
+              onClick={() => setSelectedDate(todayStr)}
+              className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-500 hover:border-gray-300"
+            >
+              Today
+            </button>
+          )}
+          <button
+            onClick={() => setDateFilterOn(v => !v)}
+            className={`text-xs font-bold rounded-xl px-3 py-2.5 border-2 transition-colors ${!dateFilterOn ? 'border-brand-navy bg-brand-navy text-white' : 'border-gray-200 text-gray-500'}`}
+          >
+            All Dates
+          </button>
+        </div>
+      </div>
 
       {/* Type-count pills */}
       <div className="flex gap-2 flex-wrap">
@@ -213,7 +292,7 @@ export default function OrdersPage() {
 
       {/* Status filter */}
       <div className="flex gap-2">
-        {(['all', 'pending', 'en_route'] as const).map(s => (
+        {(['all', 'pending', 'en_route', 'complete'] as const).map(s => (
           <button
             key={s} onClick={() => setStatusFilter(s)}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${statusFilter === s ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
@@ -261,7 +340,9 @@ export default function OrdersPage() {
       {filtered.length === 0 ? (
         <div className="text-center py-16">
           <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-bold text-gray-400 text-lg">No orders</p>
+          <p className="font-bold text-gray-400 text-lg">
+            No orders{dateFilterOn ? ` — ${DATE_FIELD_LABEL[dateField].toLowerCase()} ${selectedDate}` : ''}
+          </p>
         </div>
       ) : (
         <div className="card p-0 overflow-hidden">
@@ -275,7 +356,9 @@ export default function OrdersPage() {
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Type</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Customer</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Totes</th>
-                  <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Preferred Date</th>
+                  <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Placed</th>
+                  <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Preferred</th>
+                  <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Delivered</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Status</th>
                 </tr>
               </thead>
@@ -306,9 +389,9 @@ export default function OrdersPage() {
                           <span className="text-xs text-gray-400"> ({o.fullCount} full, {o.emptyCount} empty)</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">
-                        {o.preferredDate ? new Date(o.preferredDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
-                      </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(toUTCDateStr(o.datePlaced))}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(o.preferredDate)}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(toUTCDateStr(o.dateDelivered))}</td>
                       <td className="px-4 py-3">
                         <span className={`status-pill text-[10px] ${statusMeta.color}`}>{statusMeta.label}</span>
                       </td>

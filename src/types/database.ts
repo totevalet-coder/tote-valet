@@ -435,6 +435,7 @@ export type Database = {
         Row: {
           admin_notes: string | null
           created_at: string
+          completed_at: string | null
           customer_id: string
           id: string
           preferred_date: string | null
@@ -447,6 +448,7 @@ export type Database = {
         Insert: {
           admin_notes?: string | null
           created_at?: string
+          completed_at?: string | null
           customer_id: string
           id?: string
           preferred_date?: string | null
@@ -459,6 +461,7 @@ export type Database = {
         Update: {
           admin_notes?: string | null
           created_at?: string
+          completed_at?: string | null
           customer_id?: string
           id?: string
           preferred_date?: string | null
@@ -793,6 +796,12 @@ export interface RouteStop {
   completed: boolean
   force_completed: boolean
   error_id?: string
+  // Persisted link back to the order (tote_requests row, or a legacy
+  // pickup_requested tote flag) that produced this stop, if any — set at
+  // route-creation time, read back when the stop completes so the order's
+  // status/completed_at can update in step with the physical delivery.
+  // Manually-added stops (no matching order) simply omit this.
+  order_ref?: { source: 'tote_request' | 'pickup_flag'; sourceId: string }
 }
 
 export interface PickListTote {
