@@ -145,6 +145,11 @@ grant select, insert, update, delete on public.pick_lists  to authenticated;
 grant select, insert, update, delete on public.errors      to authenticated;
 ```
 
+**⚠️ Gap found 2026-08-08: `tote_requests` was never in this list.** Confirmed as the likely cause of a real bug — the driver's browser client updating `tote_requests` directly (to mark a pickup order complete) was a silent no-op, since `.update()` doesn't throw on an RLS/grant refusal and nothing was checking the returned error. Worked around by routing that specific write through a service-role API route (`api/complete-route-stop`) instead of patching the grant, since the exact live policy/grant on this table is undocumented and unverified (it predates this GRANTs block — see the "✅ Done" note under Migrations below). If another direct client write to `tote_requests` ever needs building (e.g. a customer canceling their own request), don't assume it'll just work — either verify the live grant first, or route it server-side the same way. Running this would close the gap at the root if ever confirmed safe to add:
+```sql
+grant select, insert, update, delete on public.tote_requests to authenticated;
+```
+
 Any new table you create also needs a matching GRANT or supabase-js won't see it.
 
 ### Migrations (schema.sql updated May 29, 2026 to match — see file for full history)
