@@ -48,7 +48,7 @@ export default function AdminRouteDetailPage() {
   const totalTotes = stops.reduce((n, s) => n + s.tote_ids.length, 0)
 
   return (
-    <div className="px-5 pt-6 pb-6 space-y-5">
+    <div className="p-6 space-y-5 max-w-3xl">
       <button onClick={() => router.push('/admin/routes')} className="flex items-center gap-2 text-gray-500 text-sm">
         <ChevronLeft className="w-4 h-4" /> Back to Routes
       </button>
