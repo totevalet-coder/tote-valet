@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Truck, Package, ArrowDownToLine, ArrowRight, Download, Printer, FileText, MoreHorizontal } from 'lucide-react'
+import { Truck, Package, ArrowDownToLine, ArrowRight, Download, Printer, FileText, MoreHorizontal, Trash2 } from 'lucide-react'
 
 type OrderType = 'empty_tote_delivery' | 'pickup' | 'full_tote_delivery'
 type OrderStatus = 'pending' | 'en_route' | 'complete'
@@ -197,6 +197,44 @@ export default function OrdersPage() {
     }
   }
 
+  // Bypasses normal flow entirely — matches "Force Unassign"/"Force
+  // Complete" elsewhere in the app (admin override, no status restriction).
+  // Permanently removes the order regardless of status (pending/en
+  // route/complete); if it's already linked to a route stop, the stop
+  // itself is untouched (order_ref just points at a now-missing row —
+  // harmless, the stop-completion write-back simply matches zero rows).
+  async function forceDeleteOrders(toDelete: OrderRow[]) {
+    if (toDelete.length === 0) return
+    const label = toDelete.length === 1
+      ? `this ${TYPE_META[toDelete[0].type].label} order for ${toDelete[0].customerName}`
+      : `these ${toDelete.length} orders`
+    const confirmed = window.confirm(
+      `Force delete ${label}? This permanently removes the order and cannot be undone. ` +
+      `If it's already assigned to a route, the route stop itself is not affected — only the order record.`
+    )
+    if (!confirmed) return
+
+    const requestIds = toDelete.filter(o => o.source === 'tote_request').map(o => o.sourceId)
+    const pickupFlagIds = toDelete.filter(o => o.source === 'pickup_flag').map(o => o.sourceId)
+
+    const [reqRes, flagRes] = await Promise.all([
+      requestIds.length > 0 ? supabase.from('tote_requests').delete().in('id', requestIds) : Promise.resolve({ error: null }),
+      // pickup_flag orders have no row of their own to delete — they're just
+      // a flag on the tote. "Deleting" the order means clearing the flag.
+      pickupFlagIds.length > 0 ? supabase.from('totes').update({ pickup_requested: false }).in('id', pickupFlagIds) : Promise.resolve({ error: null }),
+    ])
+    const err = reqRes.error ?? flagRes.error
+    if (err) { alert(`Delete failed: ${err.message}`); return }
+
+    const deletedKeys = new Set(toDelete.map(o => o.key))
+    setOrders(prev => prev.filter(o => !deletedKeys.has(o.key)))
+    setSelected(prev => {
+      const n = new Set(prev)
+      deletedKeys.forEach(k => n.delete(k))
+      return n
+    })
+  }
+
   function exportCSV() {
     const rows = [['Type', 'Customer', 'Address', 'Totes', 'Date Placed', 'Preferred Date', 'Date Delivered', 'Status']]
     for (const o of selectedOrders.length > 0 ? selectedOrders : filtered) {
@@ -312,6 +350,12 @@ export default function OrdersPage() {
           >
             Assign to New Route <ArrowRight className="w-4 h-4" />
           </button>
+          <button
+            onClick={() => forceDeleteOrders(selectedOrders)}
+            className="flex items-center gap-1.5 border-2 border-red-200 text-red-600 rounded-xl px-4 py-2 text-sm font-bold hover:bg-red-50 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" /> Force Delete
+          </button>
           <div className="relative ml-auto">
             <button onClick={() => setShowExport(v => !v)} className="w-9 h-9 rounded-xl border-2 border-gray-200 flex items-center justify-center text-gray-500 hover:border-brand-blue hover:text-brand-blue transition-colors">
               <MoreHorizontal className="w-4 h-4" />
@@ -360,6 +404,7 @@ export default function OrdersPage() {
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Preferred</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Delivered</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Status</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
@@ -394,6 +439,15 @@ export default function OrdersPage() {
                       <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(toUTCDateStr(o.dateDelivered))}</td>
                       <td className="px-4 py-3">
                         <span className={`status-pill text-[10px] ${statusMeta.color}`}>{statusMeta.label}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => forceDeleteOrders([o])}
+                          title="Force delete this order"
+                          className="text-gray-300 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
                   )
