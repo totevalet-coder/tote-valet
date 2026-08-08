@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Bell, Truck, Package, ClipboardList, Navigation,
-  AlertTriangle, Users, CreditCard, Settings, Warehouse, ShieldCheck,
+  AlertTriangle, Users, CreditCard, Settings, Warehouse,
 } from 'lucide-react'
 
 interface NavItem {
@@ -78,12 +79,9 @@ export default function Sidebar() {
     <aside className="w-60 flex-shrink-0 bg-brand-navy text-white flex flex-col h-screen sticky top-0">
       {/* Branding */}
       <div className="flex items-center gap-2.5 px-5 h-16 border-b border-white/10 flex-shrink-0">
-        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center flex-shrink-0">
-          <ShieldCheck className="w-4.5 h-4.5 text-brand-navy" />
-        </div>
         <div className="leading-tight">
-          <p className="font-black text-sm">Tote Valet</p>
-          <p className="text-[10px] text-white/50 font-bold tracking-wider">OPERATIONS</p>
+          <Image src="/logo.svg" alt="Storage Valet" width={130} height={41} className="brightness-0 invert" priority />
+          <p className="text-[10px] text-white/50 font-bold tracking-wider mt-0.5">OPERATIONS</p>
         </div>
       </div>
 
