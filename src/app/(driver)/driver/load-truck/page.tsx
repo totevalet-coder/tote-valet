@@ -180,7 +180,13 @@ export default function LoadTruckPage() {
     // need a bigger undo path; not built.
   }
 
-  const allLoaded = totalExpected > 0 && loadedTotes.length === totalExpected
+  // Deliberately no `totalExpected > 0 &&` guard here — a pickup-only route
+  // has totalExpected === 0, and 0 loaded out of 0 expected IS "all loaded."
+  // (Previously required totalExpected > 0, which meant a pickup-only route
+  // could never satisfy this and the Start Route button — gated on
+  // allLoaded below — never appeared at all, despite the "Pickup-only
+  // route... tap below when ready to depart" notice already promising one.)
+  const allLoaded = loadedTotes.length === totalExpected
 
   if (loading) {
     return (
@@ -332,7 +338,9 @@ export default function LoadTruckPage() {
         <div className="space-y-3">
           <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 flex items-center gap-3">
             <CheckCircle2 className="w-6 h-6 text-green-600 flex-shrink-0" />
-            <p className="text-green-700 font-semibold text-sm">All {totalExpected} totes loaded!</p>
+            <p className="text-green-700 font-semibold text-sm">
+              {totalExpected > 0 ? `All ${totalExpected} totes loaded!` : 'No totes to load — ready to depart!'}
+            </p>
           </div>
           <button
             onClick={async () => {
@@ -345,7 +353,7 @@ export default function LoadTruckPage() {
             }}
             className="w-full bg-brand-navy text-white rounded-2xl py-4 font-black text-base hover:bg-blue-900 active:scale-[0.98] transition-all shadow-lg"
           >
-            Done Loading — Start Route
+            {totalExpected > 0 ? 'Done Loading — Start Route' : 'Start Route'}
           </button>
         </div>
       )}
