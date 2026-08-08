@@ -12,6 +12,7 @@ import StatCard from '@/components/admin/StatCard'
 
 interface EnrichedRoute extends Route {
   driverName: string
+  driverEmail: string
   fullCount: number
   emptyCount: number
 }
@@ -51,7 +52,7 @@ export default function AdminRoutesPage() {
     }
 
     const enriched = await Promise.all((routeData as Route[]).map(async r => {
-      const { data: driver } = await supabase.from('customers').select('name').eq('id', r.driver_id ?? '').single()
+      const { data: driver } = await supabase.from('customers').select('name, email').eq('id', r.driver_id ?? '').single()
       let fullCount = 0, emptyCount = 0
       for (const s of r.stops as RouteStop[]) {
         for (const toteId of s.tote_ids) {
@@ -61,7 +62,7 @@ export default function AdminRoutesPage() {
         // Generic empties not yet scanned/registered — not real tote rows yet
         emptyCount += Math.max(0, (s.expected_empty_count ?? 0) - s.tote_ids.length)
       }
-      return { ...r, driverName: driver?.name ?? 'Unassigned', fullCount, emptyCount }
+      return { ...r, driverName: driver?.name ?? 'Unassigned', driverEmail: driver?.email ?? '', fullCount, emptyCount }
     }))
 
     setRoutes(enriched)
@@ -169,7 +170,10 @@ export default function AdminRoutesPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{r.driverName} <span className="text-gray-300">· {r.date}</span></td>
+                      <td className="px-4 py-3">
+                        <p className="text-gray-700 font-medium">{r.driverName}</p>
+                        <p className="text-xs text-gray-400">{r.driverEmail} · {r.date}</p>
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`status-pill text-[10px] ${STATUS_STYLES[r.status] ?? 'bg-gray-100 text-gray-500'}`}>
                           {r.status.replace('_', ' ')}
@@ -214,7 +218,7 @@ function StopDetail({ route, onViewFull }: { route: EnrichedRoute; onViewFull: (
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-black text-brand-navy">{route.id} — Stop Detail</h2>
-          <p className="text-xs text-gray-400">{route.driverName} · {done} of {stops.length} stops</p>
+          <p className="text-xs text-gray-400">{route.driverName} ({route.driverEmail}) · {done} of {stops.length} stops</p>
         </div>
         <button onClick={onViewFull} className="text-xs font-semibold text-brand-blue hover:underline">
           View Full Route →
