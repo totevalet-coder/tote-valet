@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop, Customer } from '@/types/database'
 import {
   ChevronLeft, CheckCircle2, Package, MapPin, AlertCircle, Clock, Truck,
-  UserCog, Split, X, AlertTriangle,
+  UserCog, Split, X, AlertTriangle, UserX, RefreshCw,
 } from 'lucide-react'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -39,6 +39,12 @@ export default function AdminRouteDetailPage() {
   const [splitSaving, setSplitSaving] = useState(false)
   const [splitResultId, setSplitResultId] = useState<string | null>(null)
 
+  // Force unassign
+  const [unassigning, setUnassigning] = useState(false)
+
+  // Per-stop address refresh
+  const [refreshingStop, setRefreshingStop] = useState<number | null>(null)
+
   const load = useCallback(async () => {
     const [routeRes, driversRes] = await Promise.all([
       supabase.from('routes').select('*').eq('id', id).single(),
@@ -68,6 +74,35 @@ export default function AdminRouteDetailPage() {
     setEditingDriver(false)
     setSavingDriver(false)
     load()
+  }
+
+  async function forceUnassign() {
+    if (!route) return
+    const label = driverName === 'Unassigned' ? 'this route' : `${driverName} from ${route.id}`
+    if (!confirm(`Unassign ${label}? Status resets to Planned and it'll need a driver assigned again.`)) return
+    setUnassigning(true)
+    await supabase.from('routes').update({ driver_id: null, status: 'planned' }).eq('id', route.id)
+    setUnassigning(false)
+    load()
+  }
+
+  // Stop addresses are captured at route-creation time, not live-linked to
+  // the customer record -- editing a customer's address afterward doesn't
+  // retroactively update routes already built from it. This re-pulls just
+  // one stop's current name/address from its customer.
+  async function refreshStopAddress(stopNumber: number, customerId: string) {
+    if (!route) return
+    setRefreshingStop(stopNumber)
+    const { data: cust } = await supabase.from('customers').select('name, address').eq('id', customerId).single()
+    if (cust) {
+      const stops = route.stops as RouteStop[]
+      const updatedStops = stops.map(s =>
+        s.stop_number === stopNumber ? { ...s, address: cust.address ?? s.address, customer_name: cust.name } : s
+      )
+      await supabase.from('routes').update({ stops: updatedStops }).eq('id', route.id)
+      setRoute(prev => prev ? { ...prev, stops: updatedStops } : prev)
+    }
+    setRefreshingStop(null)
   }
 
   function toggleSplitStop(stopNumber: number) {
@@ -188,6 +223,14 @@ export default function AdminRouteDetailPage() {
           >
             <Split className="w-4 h-4" /> Split Route
           </button>
+          <button
+            onClick={forceUnassign}
+            disabled={!route.driver_id || unassigning}
+            title={!route.driver_id ? 'Already unassigned' : 'Clear the driver and send this route back to Planned'}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold border-2 border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-40"
+          >
+            <UserX className="w-4 h-4" /> {unassigning ? 'Unassigning…' : 'Force Unassign'}
+          </button>
         </div>
       )}
 
@@ -297,8 +340,19 @@ export default function AdminRouteDetailPage() {
                       <AlertCircle className="w-4 h-4 text-red-500" />
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                    <MapPin className="w-3 h-3" />{stop.address}
+                  <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5">
+                    <MapPin className="w-3 h-3 flex-shrink-0" />
+                    <span className="flex-1">{stop.address}</span>
+                    {canEdit && (
+                      <button
+                        onClick={() => refreshStopAddress(stop.stop_number, stop.customer_id)}
+                        disabled={refreshingStop === stop.stop_number}
+                        title="Re-pull this customer's current address"
+                        className="text-gray-300 hover:text-brand-blue transition-colors flex-shrink-0"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${refreshingStop === stop.stop_number ? 'animate-spin' : ''}`} />
+                      </button>
+                    )}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1.5 items-center">
                     {stop.tote_ids.map(tid => (
