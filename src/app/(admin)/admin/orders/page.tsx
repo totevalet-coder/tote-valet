@@ -6,12 +6,14 @@ import { createClient } from '@/lib/supabase/client'
 import { Truck, Package, ArrowDownToLine, ArrowRight, Download, Printer, FileText, MoreHorizontal } from 'lucide-react'
 
 type OrderType = 'empty_tote_delivery' | 'pickup' | 'full_tote_delivery'
+type OrderStatus = 'pending' | 'en_route' | 'complete'
 
 interface OrderRow {
   key: string
   source: 'tote_request' | 'pickup_flag'
   sourceId: string
   type: OrderType
+  status: OrderStatus
   customerId: string
   customerName: string
   customerAddress: string | null
@@ -28,6 +30,21 @@ const TYPE_META: Record<OrderType, { label: string; icon: typeof Package; color:
   full_tote_delivery:  { label: 'Full Tote Delivery',  icon: ArrowDownToLine, color: 'bg-green-100 text-green-700' },
 }
 
+const STATUS_META: Record<OrderStatus, { label: string; color: string }> = {
+  pending:  { label: 'Pending',  color: 'bg-amber-100 text-amber-700' },
+  en_route: { label: 'En Route', color: 'bg-blue-100 text-blue-700' },
+  complete: { label: 'Complete', color: 'bg-green-100 text-green-700' },
+}
+
+// tote_requests.status in the DB is still 'pending' | 'acknowledged' | 'complete'
+// (no schema change made for this) — 'acknowledged' is displayed as "En Route"
+// since, post the auto-acknowledge fix, that's the only thing that ever sets it now.
+function toOrderStatus(dbStatus: string): OrderStatus {
+  if (dbStatus === 'acknowledged') return 'en_route'
+  if (dbStatus === 'complete') return 'complete'
+  return 'pending'
+}
+
 export default function OrdersPage() {
   const router = useRouter()
   const supabase = createClient()
@@ -35,31 +52,35 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState<OrderType | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showExport, setShowExport] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     const [pickupRes, requestsRes] = await Promise.all([
+      // Legacy path: pickup_requested is a plain boolean, so there's no way
+      // to represent "en route" for it without a schema change — it just
+      // disappears once cleared, same as before. Always shown as Pending.
       supabase.from('totes').select('id, tote_name, customer_id, customers(name, address)').eq('pickup_requested', true),
       supabase.from('tote_requests')
-        .select('id, type, quantity, tote_ids, preferred_date, customer_id, customers(name, address)')
-        .eq('status', 'pending').order('preferred_date', { ascending: true }),
+        .select('id, type, quantity, tote_ids, preferred_date, customer_id, status, customers(name, address)')
+        .order('preferred_date', { ascending: true }),
     ])
 
     const rows: OrderRow[] = []
 
     for (const t of (pickupRes.data ?? []) as { id: string; tote_name: string | null; customer_id: string; customers: { name: string; address: string | null } | null }[]) {
       rows.push({
-        key: `pickup-flag-${t.id}`, source: 'pickup_flag', sourceId: t.id, type: 'pickup',
+        key: `pickup-flag-${t.id}`, source: 'pickup_flag', sourceId: t.id, type: 'pickup', status: 'pending',
         customerId: t.customer_id, customerName: t.customers?.name ?? 'Unknown', customerAddress: t.customers?.address ?? null,
         toteIds: [t.id], quantity: null, preferredDate: null,
       })
     }
 
-    for (const r of (requestsRes.data ?? []) as { id: string; type: string; quantity: number | null; tote_ids: string[] | null; preferred_date: string | null; customer_id: string; customers: { name: string; address: string | null } | null }[]) {
+    for (const r of (requestsRes.data ?? []) as { id: string; type: string; quantity: number | null; tote_ids: string[] | null; preferred_date: string | null; customer_id: string; status: string; customers: { name: string; address: string | null } | null }[]) {
       rows.push({
-        key: `request-${r.id}`, source: 'tote_request', sourceId: r.id, type: r.type as OrderType,
+        key: `request-${r.id}`, source: 'tote_request', sourceId: r.id, type: r.type as OrderType, status: toOrderStatus(r.status),
         customerId: r.customer_id, customerName: r.customers?.name ?? 'Unknown', customerAddress: r.customers?.address ?? null,
         toteIds: r.tote_ids ?? [], quantity: r.quantity, preferredDate: r.preferred_date,
       })
@@ -83,13 +104,18 @@ export default function OrdersPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Type-count pills reflect pending workload only — an order that's already
+  // en route isn't something still waiting to be handled.
   const typeCounts = useMemo(() => {
     const c: Record<OrderType, number> = { empty_tote_delivery: 0, pickup: 0, full_tote_delivery: 0 }
-    for (const o of orders) c[o.type]++
+    for (const o of orders) if (o.status === 'pending') c[o.type]++
     return c
   }, [orders])
+  const pendingPickups = orders.filter(o => o.type === 'pickup' && o.status === 'pending')
 
-  const filtered = typeFilter === 'all' ? orders : orders.filter(o => o.type === typeFilter)
+  const filtered = orders
+    .filter(o => typeFilter === 'all' || o.type === typeFilter)
+    .filter(o => statusFilter === 'all' || o.status === statusFilter)
 
   function toggleSelect(key: string) {
     setSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
@@ -105,9 +131,9 @@ export default function OrdersPage() {
       customerId: o.customerId,
       toteIds: o.toteIds,
       type: o.type === 'pickup' ? 'pickup' as const : 'delivery' as const,
-      // Carried through so the route builder can auto-acknowledge this order
-      // once the route actually saves — not before, since the dispatcher can
-      // still edit or drop the stop up to that point.
+      // Carried through so the route builder can auto-acknowledge (-> En
+      // Route) this order once the route actually saves, not before, since
+      // the dispatcher can still edit or drop the stop up to that point.
       orderRef: { source: o.source, sourceId: o.sourceId },
     }))
     const payload = JSON.stringify({ stops })
@@ -121,9 +147,9 @@ export default function OrdersPage() {
   }
 
   function exportCSV() {
-    const rows = [['Type', 'Customer', 'Address', 'Totes', 'Preferred Date']]
+    const rows = [['Type', 'Customer', 'Address', 'Totes', 'Preferred Date', 'Status']]
     for (const o of selectedOrders.length > 0 ? selectedOrders : filtered) {
-      rows.push([TYPE_META[o.type].label, o.customerName, o.customerAddress ?? '', String(o.toteIds.length || o.quantity || ''), o.preferredDate ?? ''])
+      rows.push([TYPE_META[o.type].label, o.customerName, o.customerAddress ?? '', String(o.toteIds.length || o.quantity || ''), o.preferredDate ?? '', STATUS_META[o.status].label])
     }
     const csv = rows.map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -133,13 +159,6 @@ export default function OrdersPage() {
     a.click()
     URL.revokeObjectURL(url)
     setShowExport(false)
-  }
-
-  async function dismiss(o: OrderRow) {
-    if (o.source === 'tote_request') await supabase.from('tote_requests').update({ status: 'acknowledged' }).eq('id', o.sourceId)
-    else await supabase.from('totes').update({ pickup_requested: false }).eq('id', o.sourceId)
-    setSelected(prev => { const n = new Set(prev); n.delete(o.key); return n })
-    load()
   }
 
   if (loading) {
@@ -160,13 +179,13 @@ export default function OrdersPage() {
           onClick={() => setTypeFilter('all')}
           className={`rounded-full px-3 py-1.5 text-xs font-bold border-2 transition-colors ${typeFilter === 'all' ? 'bg-brand-navy text-white border-brand-navy' : 'bg-white text-gray-600 border-gray-200'}`}
         >
-          All {orders.length}
+          All Pending {Object.values(typeCounts).reduce((s, n) => s + n, 0)}
         </button>
         {(Object.keys(TYPE_META) as OrderType[]).map(t => {
           const meta = TYPE_META[t]
           const Icon = meta.icon
-          const extra = t === 'pickup' && orders.some(o => o.type === 'pickup')
-            ? ` (${orders.filter(o => o.type === 'pickup').reduce((s, o) => s + (o.fullCount ?? 0), 0)} full, ${orders.filter(o => o.type === 'pickup').reduce((s, o) => s + (o.emptyCount ?? 0), 0)} empty)`
+          const extra = t === 'pickup' && pendingPickups.length > 0
+            ? ` (${pendingPickups.reduce((s, o) => s + (o.fullCount ?? 0), 0)} full, ${pendingPickups.reduce((s, o) => s + (o.emptyCount ?? 0), 0)} empty)`
             : ''
           return (
             <button
@@ -177,6 +196,18 @@ export default function OrdersPage() {
             </button>
           )
         })}
+      </div>
+
+      {/* Status filter */}
+      <div className="flex gap-2">
+        {(['all', 'pending', 'en_route'] as const).map(s => (
+          <button
+            key={s} onClick={() => setStatusFilter(s)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${statusFilter === s ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+          >
+            {s === 'all' ? 'All Statuses' : STATUS_META[s].label}
+          </button>
+        ))}
       </div>
 
       {/* Bulk action bar */}
@@ -233,13 +264,13 @@ export default function OrdersPage() {
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Totes</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Preferred Date</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Status</th>
-                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(o => {
                   const meta = TYPE_META[o.type]
                   const Icon = meta.icon
+                  const statusMeta = STATUS_META[o.status]
                   return (
                     <tr key={o.key} className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
@@ -266,12 +297,7 @@ export default function OrdersPage() {
                         {o.preferredDate ? new Date(o.preferredDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="status-pill text-[10px] bg-amber-100 text-amber-700">Pending</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button onClick={() => dismiss(o)} className="text-xs text-gray-400 hover:text-gray-600 font-semibold">
-                          Acknowledge
-                        </button>
+                        <span className={`status-pill text-[10px] ${statusMeta.color}`}>{statusMeta.label}</span>
                       </td>
                     </tr>
                   )
