@@ -9,6 +9,14 @@ interface Props {
   placeholder?: string
   disabled?: boolean
   large?: boolean
+  // Keeps the manual-entry field focused so a Bluetooth/USB "HID keyboard
+  // wedge" hardware barcode scanner can type straight into it and
+  // auto-submit on Enter — no camera needed. Opt-in per screen, not
+  // default-on: only worker-facing scan points (driver/warehouse/sorter)
+  // should set this. Customer-facing screens leave it off since customers
+  // only ever have the camera, and stealing focus there would pop the
+  // on-screen keyboard unprompted.
+  autoFocusManual?: boolean
 }
 
 // The native Shape Detection API (BarcodeDetector) isn't in TypeScript's bundled
@@ -36,8 +44,9 @@ function getNativeDetectorCtor(): BarcodeDetectorCtor | null {
   return ctor ?? null
 }
 
-export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manually', disabled, large }: Props) {
+export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manually', disabled, large, autoFocusManual }: Props) {
   const [scanning, setScanning] = useState(false)
+  const manualInputRef = useRef<HTMLInputElement>(null)
   const [cameraError, setCameraError] = useState('')
   const [captureError, setCaptureError] = useState('')
   const [capturing, setCapturing] = useState(false)
@@ -236,6 +245,14 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
     }
   }
 
+  // Re-focus the manual field for hardware-scanner screens: once on mount,
+  // and again whenever the camera overlay closes (cancel, error, or a
+  // successful camera scan) so a worker can keep firing off a hardware
+  // scanner without tapping the field between every item.
+  useEffect(() => {
+    if (autoFocusManual && !scanning) manualInputRef.current?.focus()
+  }, [autoFocusManual, scanning])
+
   function handleManual(e: React.FormEvent) {
     e.preventDefault()
     const val = manualValue.trim().toUpperCase()
@@ -339,6 +356,7 @@ export default function BarcodeScanInput({ onScan, placeholder = 'Enter ID manua
           <div className="relative flex-1">
             <ScanLine className={`absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 ${large ? 'w-5 h-5' : 'w-4 h-4'}`} />
             <input
+              ref={manualInputRef}
               type="text"
               value={manualValue}
               onChange={e => { setManualValue(e.target.value); setCameraError('') }}

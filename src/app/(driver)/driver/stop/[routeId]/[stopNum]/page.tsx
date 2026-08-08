@@ -566,7 +566,7 @@ export default function StopDetailPage() {
               <p className="text-sm text-yellow-700 font-medium">{scanError}</p>
             </div>
           )}
-          <BarcodeScanInput onScan={handleScan} placeholder="Or enter tote ID…" large disabled={scanBusy} />
+          <BarcodeScanInput onScan={handleScan} placeholder="Or enter tote ID…" large disabled={scanBusy} autoFocusManual />
         </div>
       )}
 
@@ -604,6 +604,7 @@ export default function StopDetailPage() {
             onScan={handleScan}
             placeholder={scanPhase === 'tote' ? 'Or enter tote ID…' : 'Or enter seal number…'}
             large
+            autoFocusManual
           />
 
           {/* Partial delivery button */}

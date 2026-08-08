@@ -167,7 +167,7 @@ export default function LoadVerificationPage() {
               <p className="text-sm text-yellow-700">{scanError}</p>
             </div>
           )}
-          <BarcodeScanInput onScan={handleScan} placeholder="Or enter tote ID…" />
+          <BarcodeScanInput onScan={handleScan} placeholder="Or enter tote ID…" autoFocusManual />
         </div>
       )}
 

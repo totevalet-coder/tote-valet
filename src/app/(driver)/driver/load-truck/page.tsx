@@ -229,6 +229,7 @@ export default function LoadTruckPage() {
           onScan={handleScan}
           placeholder="Or type tote ID (e.g. TV-1001)"
           disabled={scanning}
+          autoFocusManual
         />
         {scanError && (
           <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-4 py-2">

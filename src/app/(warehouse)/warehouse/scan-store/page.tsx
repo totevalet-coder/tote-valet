@@ -244,6 +244,7 @@ function ScanStoreContent() {
                 onScan={handleToteScan}
                 placeholder="Or enter tote ID (e.g. TV-1001)"
                 disabled={toteLoading}
+                autoFocusManual
               />
               {toteError && (
                 <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
@@ -300,6 +301,7 @@ function ScanStoreContent() {
                 onScan={handleBinScan}
                 placeholder="Or enter bin ID (e.g. A-01)"
                 disabled={binLoading}
+                autoFocusManual
               />
               {binError && (
                 <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">

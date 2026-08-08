@@ -152,7 +152,7 @@ export default function SortPage() {
         )}
 
         {!destination && (
-          <BarcodeScanInput onScan={handleToteScan} placeholder="Or enter tote ID…" />
+          <BarcodeScanInput onScan={handleToteScan} placeholder="Or enter tote ID…" autoFocusManual />
         )}
 
         {destination && scannedTote && !zoneSaved && (
@@ -184,7 +184,7 @@ export default function SortPage() {
                 <p className="text-sm text-red-700">{zoneError}</p>
               </div>
             )}
-            <BarcodeScanInput onScan={handleZoneScan} placeholder={`Or enter ${destination.zoneLabel}…`} />
+            <BarcodeScanInput onScan={handleZoneScan} placeholder={`Or enter ${destination.zoneLabel}…`} autoFocusManual />
             <button onClick={() => { setDestination(null); setScannedTote(null); setScanError(''); setZoneError('') }}
               className="w-full text-center text-xs text-gray-400 hover:text-gray-600 font-semibold">
               ← Cancel, scan different tote

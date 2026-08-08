@@ -192,7 +192,7 @@ export default function DropTotesPage() {
             </div>
           )}
 
-          <BarcodeScanInput onScan={handleZoneScan} placeholder="Or enter zone ID…" />
+          <BarcodeScanInput onScan={handleZoneScan} placeholder="Or enter zone ID…" autoFocusManual />
         </div>
 
         <div className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
@@ -260,7 +260,7 @@ export default function DropTotesPage() {
               <p className="text-sm text-yellow-700">{scanError}</p>
             </div>
           )}
-          <BarcodeScanInput onScan={handleToteScan} placeholder="Or enter tote ID…" />
+          <BarcodeScanInput onScan={handleToteScan} placeholder="Or enter tote ID…" autoFocusManual />
         </div>
       )}
 
