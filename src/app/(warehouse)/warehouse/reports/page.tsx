@@ -13,6 +13,8 @@ interface SummaryStats {
   stowed: number
   unstowed: number
   picksCompleted: number
+  inDropZone: number
+  sortedToday: number
   totesOut: number
   binUtilization: number
 }
@@ -62,7 +64,7 @@ function ReportsContent() {
 
     // Load all data in parallel
     const [totesRes, binsRes, pickListsRes, errorsRes] = await Promise.all([
-      supabase.from('totes').select('id, status, bin_location, customer_id, seal_number'),
+      supabase.from('totes').select('id, status, bin_location, customer_id, seal_number, last_scan_date'),
       supabase.from('bins').select('*').order('id'),
       supabase.from('pick_lists').select('status').eq('status', 'complete'),
       supabase.from('errors').select('*').eq('resolved', false).order('created_at', { ascending: false }),
@@ -70,11 +72,16 @@ function ReportsContent() {
 
     const totes = totesRes.data ?? []
     const binsData = binsRes.data ?? []
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0)
 
     // Summary stats
     const received = totes.filter(t => t.status === 'ready_to_stow' || t.status === 'stored').length
     const stowed = totes.filter(t => t.status === 'stored').length
     const unstowedCount = totes.filter(t => t.status === 'ready_to_stow').length
+    const inDropZone = totes.filter(t => t.status === 'picked').length
+    const sortedToday = totes.filter(t =>
+      t.status === 'returned_to_station' && t.last_scan_date && new Date(t.last_scan_date) >= startOfToday
+    ).length
     const totesOut = totes.filter(t => ['empty_at_customer', 'in_transit', 'pending_pick', 'picked'].includes(t.status)).length
     const totalCap = binsData.reduce((s, b) => s + b.capacity, 0)
     const totalUsed = binsData.reduce((s, b) => s + b.current_count, 0)
@@ -84,6 +91,8 @@ function ReportsContent() {
       stowed,
       unstowed: unstowedCount,
       picksCompleted: pickListsRes.data?.length ?? 0,
+      inDropZone,
+      sortedToday,
       totesOut,
       binUtilization: totalCap > 0 ? Math.round((totalUsed / totalCap) * 100) : 0,
     })
@@ -230,6 +239,8 @@ function ReportsContent() {
               { label: 'Totes Stowed', value: summary.stowed, emoji: '✅' },
               { label: 'Still Unstowed', value: summary.unstowed, emoji: '⚠️' },
               { label: 'Picks Completed', value: summary.picksCompleted, emoji: '📋' },
+              { label: 'In Drop Zone (Unsorted)', value: summary.inDropZone, emoji: '📦' },
+              { label: 'Sorted Today', value: summary.sortedToday, emoji: '🔀' },
               { label: 'Totes Out', value: summary.totesOut, emoji: '🚐' },
             ].map(({ label, value, emoji }) => (
               <div key={label} className="card text-center py-4">

@@ -192,9 +192,9 @@ Claude API suggests item names from tote photos. Lives at `api/ai-label/`. Uses 
 ---
 
 ## Known Outstanding TODOs
-1. Warehouse portal — Add "Sort" under Quick Actions
-2. Warehouse portal — Add "Sort" under Reports
-3. Warehouse portal — Add Live Inventory "unsorted" view
+1. ~~Warehouse portal — Add "Sort" under Quick Actions~~ ✅ Done 2026-08-06 — "Sort" button added to Warehouse dashboard Quick Actions (links to `/warehouse/sort`), plus a purple alert banner when totes are waiting to be sorted.
+2. ~~Warehouse portal — Add "Sort" under Reports~~ ✅ Done 2026-08-06 — Reports > Summary tab now shows "In Drop Zone (Unsorted)" and "Sorted Today" alongside the existing stats.
+3. ~~Warehouse portal — Add Live Inventory "unsorted" view~~ ✅ Done 2026-08-06 — "Unsorted — In Drop Zone" tile added to the Warehouse dashboard's Live Inventory grid (`status = 'picked'` count, i.e. totes picked but not yet routed to a zone).
 4. ~~Landing page — Video walkthrough (currently "Coming Soon")~~ ✅ Replaced 2026-07-28 with `src/components/ui/ExplainerAnimation.tsx` — a 5-scene animated CSS/SVG loop (sign in → pick date/quantity → fill & label → request pickup → search & request dropoff). Known to need further polish/iteration later — revisit pacing, scene content, and consider adding real screenshots or a narrated version once the flow is more final.
 5. Landing page — Dedicated pricing page (currently links to /register)
 6. Landing page — Verify FAQ answers are populated

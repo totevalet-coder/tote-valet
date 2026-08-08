@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { RouteStop } from '@/types/database'
-import { AlertTriangle, ClipboardList, Package, Boxes, ArrowRight } from 'lucide-react'
+import { AlertTriangle, ClipboardList, Package, Boxes, ArrowRight, Shuffle } from 'lucide-react'
 
 interface WHStats {
   storedTotal: number
@@ -16,6 +16,7 @@ interface WHStats {
   unstowed: number
   pendingPicks: number
   pickListsInProgress: number
+  unsorted: number
   binSpacesAvailable: number
   driverErrors: number
   userRole: string
@@ -89,6 +90,7 @@ export default function WarehouseDashboard() {
 
     const storedTotal = totes?.filter(t => t.status === 'stored').length ?? 0
     const unstowed = totes?.filter(t => t.status === 'ready_to_stow').length ?? 0
+    const unsorted = totes?.filter(t => t.status === 'picked').length ?? 0
     const stowedToday = totes?.filter(t =>
       t.status === 'stored' && t.last_scan_date && new Date(t.last_scan_date) >= startOfToday
     ).length ?? 0
@@ -117,6 +119,7 @@ export default function WarehouseDashboard() {
       unstowed,
       pendingPicks,
       pickListsInProgress,
+      unsorted,
       binSpacesAvailable,
       driverErrors: errors?.length ?? 0,
       userRole: customer.role,
@@ -153,6 +156,20 @@ export default function WarehouseDashboard() {
               <p className="text-xs text-amber-600">Need bin assignment — tap to view</p>
             </div>
             <ArrowRight className="w-4 h-4 text-amber-500" />
+          </button>
+        )}
+
+        {stats.unsorted > 0 && (
+          <button
+            onClick={() => router.push('/warehouse/sort')}
+            className="w-full flex items-center gap-3 bg-purple-50 border border-purple-300 rounded-2xl px-4 py-3 text-left hover:bg-purple-100 transition-colors"
+          >
+            <Shuffle className="w-5 h-5 text-purple-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-bold text-purple-800">{stats.unsorted} Tote{stats.unsorted !== 1 ? 's' : ''} Waiting to Be Sorted</p>
+              <p className="text-xs text-purple-600">Picked, not yet routed to a zone — tap to view</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-purple-500" />
           </button>
         )}
 
@@ -222,6 +239,11 @@ export default function WarehouseDashboard() {
             <p className="font-black text-3xl mt-1 text-blue-600">{stats.pickListsInProgress}</p>
             <p className="text-xs text-gray-500 mt-1 leading-tight">Pick Lists In Progress</p>
           </div>
+          <div className="card text-center py-4">
+            <span className="text-2xl">🔀</span>
+            <p className="font-black text-3xl mt-1 text-purple-600">{stats.unsorted}</p>
+            <p className="text-xs text-gray-500 mt-1 leading-tight">Unsorted — In Drop Zone</p>
+          </div>
         </div>
 
         {/* Bin spaces — full width */}
@@ -267,6 +289,18 @@ export default function WarehouseDashboard() {
           <div className="text-left">
             <p className="font-black text-sm">Pick Lists</p>
             <p className="text-gray-400 text-xs mt-0.5">Start or continue picking</p>
+          </div>
+        </button>
+        <button
+          onClick={() => router.push('/warehouse/sort')}
+          className="w-full flex items-center gap-4 bg-white border-2 border-purple-300 text-brand-navy rounded-2xl px-5 py-4 shadow-sm hover:bg-purple-50 active:scale-[0.98] transition-all"
+        >
+          <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Shuffle className="w-5 h-5 text-purple-600" />
+          </div>
+          <div className="text-left">
+            <p className="font-black text-sm">Sort</p>
+            <p className="text-gray-400 text-xs mt-0.5">Route picked totes to zones</p>
           </div>
         </button>
       </section>
