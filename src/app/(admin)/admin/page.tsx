@@ -3,30 +3,55 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import type { RouteStop, PickListBin } from '@/types/database'
 import {
-  AlertTriangle, CreditCard, Package, ClipboardList,
-  Loader2, CheckCircle2, Truck, Users, Warehouse,
-  Radio, Navigation, ArrowRight, Bell
+  Package, ClipboardList, Boxes, Truck as TruckIcon,
+  Loader2, CheckCircle2, ArrowRight,
 } from 'lucide-react'
+import StatCard from '@/components/admin/StatCard'
+import PaceIndicator from '@/components/admin/PaceIndicator'
 
-interface AdminStats {
-  mrr: number
-  activeCustomers: number
-  storedTotes: number
-  emptyAtCustomer: number
-  inTransit: number
-  readyToStow: number
-  failedPayments: number
-  driverErrors: number
-  routesActive: number
-  routesTotal: number
-  pendingRequests: number
+interface DashboardStats {
+  // Inbound Today
+  receivedToday: number
+  expectedToday: number
+  fullToday: number
+  emptyToday: number
+  // Unstowed
+  unstowed: number
+  // Open Pick Lists
+  openPickLists: number
+  openPickListTotes: number
+  // Staged & Ready
+  stagedReady: number
+  // Bin Capacity
+  binSpacesAvailable: number
+  binTotalCapacity: number
+  // Driver Operations
+  routesCreated: number
+  routesTarget: number
+  fullTotesPickedUp: number
+  fullTotesPickedUpTarget: number
+  emptyTotesDelivered: number
+  emptyTotesDeliveredTarget: number
 }
 
-export default function AdminHomePage() {
+// Fixed 6:00a–2:00p shift window used to compute "% of shift elapsed" for the
+// pace cards below — matches TopBar's shift badge. No real shift-schedule
+// data model exists yet; this is a display-only placeholder until one does.
+function getShiftElapsedPct() {
+  const now = new Date()
+  const start = new Date(now); start.setHours(6, 0, 0, 0)
+  const end = new Date(now); end.setHours(14, 0, 0, 0)
+  if (now <= start) return 0
+  if (now >= end) return 100
+  return Math.round(((now.getTime() - start.getTime()) / (end.getTime() - start.getTime())) * 100)
+}
+
+export default function AdminDashboard() {
   const router = useRouter()
   const supabase = createClient()
-  const [stats, setStats] = useState<AdminStats | null>(null)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [generatedId, setGeneratedId] = useState<string | null>(null)
@@ -39,31 +64,94 @@ export default function AdminHomePage() {
 
     const today = new Date().toISOString().split('T')[0]
 
-    const [totesRes, customersRes, routesRes, errorsRes, requestsRes, pickupFlagsRes] = await Promise.all([
-      supabase.from('totes').select('status'),
-      supabase.from('customers').select('status, monthly_total, role'),
-      supabase.from('routes').select('status').eq('date', today),
-      supabase.from('errors').select('id', { count: 'exact', head: true }).eq('resolved', false),
-      supabase.from('tote_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('totes').select('id', { count: 'exact', head: true }).eq('pickup_requested', true),
+    const [totesRes, binsRes, pickListsRes, driversRes, todaysRoutesRes] = await Promise.all([
+      supabase.from('totes').select('id, status, items'),
+      supabase.from('bins').select('capacity, current_count'),
+      supabase.from('pick_lists').select('id, bins').neq('status', 'complete'),
+      supabase.from('customers').select('id', { count: 'exact', head: true }).eq('role', 'driver').eq('status', 'active'),
+      supabase.from('routes').select('id, stops').eq('date', today),
     ])
 
     const totes = totesRes.data ?? []
-    const customers = customersRes.data ?? []
-    const routes = routesRes.data ?? []
+    const bins = binsRes.data ?? []
+    const todaysRoutes = todaysRoutesRes.data ?? []
+
+    // Bin capacity
+    const binTotalCapacity = bins.reduce((s, b) => s + b.capacity, 0)
+    const binUsed = bins.reduce((s, b) => s + b.current_count, 0)
+    const binSpacesAvailable = binTotalCapacity - binUsed
+
+    // Unstowed / Staged & Ready
+    const unstowed = totes.filter(t => t.status === 'ready_to_stow').length
+    const stagedReady = totes.filter(t => t.status === 'returned_to_station').length
+
+    // Open Pick Lists
+    let openPickListTotes = 0
+    for (const pl of pickListsRes.data ?? []) {
+      const binsArr = pl.bins as PickListBin[]
+      openPickListTotes += binsArr.reduce((s, b) => s + b.totes.length, 0)
+    }
+    const openPickLists = pickListsRes.data?.length ?? 0
+
+    // Inbound Today — expected = tote_ids on today's pickup-type stops.
+    // Reused from the same approach on the Warehouse dashboard.
+    const toteById = new Map(totes.map(t => [t.id, t]))
+    const expectedToteIds = new Set<string>()
+    const pickupStopsById = new Map<string, RouteStop>()
+    const deliveryStopsById = new Map<string, RouteStop>()
+    for (const r of todaysRoutes) {
+      const stops = r.stops as RouteStop[]
+      for (const s of stops) {
+        if (s.type === 'pickup') {
+          s.tote_ids.forEach(id => { expectedToteIds.add(id); pickupStopsById.set(id, s) })
+        } else {
+          s.tote_ids.forEach(id => deliveryStopsById.set(id, s))
+        }
+      }
+    }
+    let receivedToday = 0, fullToday = 0, emptyToday = 0
+    for (const id of expectedToteIds) {
+      const t = toteById.get(id)
+      if (!t) continue
+      if (t.status !== 'in_transit') receivedToday++
+      if ((t.items?.length ?? 0) > 0) fullToday++
+      else emptyToday++
+    }
+
+    // Driver Operations — Today
+    const routesCreated = todaysRoutes.length
+    const routesTarget = driversRes.count ?? 0
+
+    // Approximation: a stop's completion + the tote's *current* item count as a
+    // proxy for full/empty at pickup/delivery time (per-stop full/empty isn't
+    // separately tracked). Good enough for a pace indicator, not exact audit data.
+    let fullTotesPickedUp = 0
+    for (const [id, stop] of pickupStopsById) {
+      const t = toteById.get(id)
+      if (t && (t.items?.length ?? 0) > 0 && stop.completed) fullTotesPickedUp++
+    }
+    const fullTotesPickedUpTarget = [...pickupStopsById.keys()].filter(
+      id => (toteById.get(id)?.items?.length ?? 0) > 0
+    ).length
+
+    let emptyTotesDelivered = 0
+    for (const [id, stop] of deliveryStopsById) {
+      const t = toteById.get(id)
+      if (t && (t.items?.length ?? 0) === 0 && stop.completed) emptyTotesDelivered++
+    }
+    const emptyTotesDeliveredTarget = [...deliveryStopsById.keys()].filter(
+      id => (toteById.get(id)?.items?.length ?? 0) === 0
+    ).length
 
     setStats({
-      mrr: customers.filter(c => c.role === 'customer').reduce((s, c) => s + (c.monthly_total ?? 0), 0),
-      activeCustomers: customers.filter(c => c.role === 'customer' && c.status === 'active').length,
-      storedTotes: totes.filter(t => t.status === 'stored').length,
-      emptyAtCustomer: totes.filter(t => t.status === 'empty_at_customer').length,
-      inTransit: totes.filter(t => t.status === 'in_transit').length,
-      readyToStow: totes.filter(t => t.status === 'ready_to_stow').length,
-      failedPayments: customers.filter(c => c.status === 'failed_payment').length,
-      driverErrors: errorsRes.count ?? 0,
-      routesActive: routes.filter(r => r.status === 'in_progress' || r.status === 'returning').length,
-      routesTotal: routes.length,
-      pendingRequests: (requestsRes.count ?? 0) + (pickupFlagsRes.count ?? 0),
+      receivedToday, expectedToday: expectedToteIds.size, fullToday, emptyToday,
+      unstowed,
+      openPickLists, openPickListTotes,
+      stagedReady,
+      binSpacesAvailable, binTotalCapacity,
+      routesCreated, routesTarget,
+      fullTotesPickedUp, fullTotesPickedUpTarget,
+      emptyTotesDelivered, emptyTotesDeliveredTarget,
     })
     setLoading(false)
   }, [supabase, router])
@@ -121,177 +209,136 @@ export default function AdminHomePage() {
     setGenerating(false)
   }
 
-  if (loading) {
+  if (loading || !stats) {
     return (
-      <div className="px-5 pt-6 space-y-4">
+      <div className="p-6 space-y-4">
         {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-200 rounded-2xl animate-pulse" />)}
       </div>
     )
   }
 
-  if (!stats) return null
-
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  const elapsedPct = getShiftElapsedPct()
 
   return (
-    <div className="px-5 pt-6 pb-6 space-y-5">
-
-      {/* Date greeting */}
+    <div className="p-6 space-y-6 max-w-[1400px]">
       <div>
         <p className="text-xs text-gray-400 font-medium">{today}</p>
-        <h1 className="font-black text-2xl text-brand-navy">Overview</h1>
+        <h1 className="font-black text-2xl text-brand-navy">Dashboard</h1>
       </div>
 
-      {/* Alert banners — only show when action needed */}
-      {(stats.driverErrors > 0 || stats.failedPayments > 0 || stats.pendingRequests > 0 || stats.readyToStow > 0) && (
-        <div className="space-y-2">
-          {stats.driverErrors > 0 && (
-            <button onClick={() => router.push('/admin/errors')}
-              className="w-full flex items-center gap-3 bg-red-50 border border-red-300 rounded-2xl px-4 py-3 text-left hover:bg-red-100 transition-colors">
-              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-              <p className="flex-1 text-sm font-bold text-red-800">
-                {stats.driverErrors} driver error{stats.driverErrors !== 1 ? 's' : ''} need review
-              </p>
-              <ArrowRight className="w-4 h-4 text-red-400" />
-            </button>
-          )}
-          {stats.failedPayments > 0 && (
-            <button onClick={() => router.push('/admin/billing')}
-              className="w-full flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 text-left hover:bg-amber-100 transition-colors">
-              <CreditCard className="w-5 h-5 text-amber-600 flex-shrink-0" />
-              <p className="flex-1 text-sm font-bold text-amber-800">
-                {stats.failedPayments} failed payment{stats.failedPayments !== 1 ? 's' : ''}
-              </p>
-              <ArrowRight className="w-4 h-4 text-amber-400" />
-            </button>
-          )}
-          {stats.pendingRequests > 0 && (
-            <button onClick={() => router.push('/admin/requests')}
-              className="w-full flex items-center gap-3 bg-blue-50 border border-blue-300 rounded-2xl px-4 py-3 text-left hover:bg-blue-100 transition-colors">
-              <Bell className="w-5 h-5 text-blue-600 flex-shrink-0" />
-              <p className="flex-1 text-sm font-bold text-blue-800">
-                {stats.pendingRequests} customer request{stats.pendingRequests !== 1 ? 's' : ''} pending
-              </p>
-              <ArrowRight className="w-4 h-4 text-blue-400" />
-            </button>
-          )}
-          {stats.readyToStow > 0 && (
-            <button onClick={() => router.push('/warehouse/scan-store?tab=unstowed')}
-              className="w-full flex items-center gap-3 bg-purple-50 border border-purple-300 rounded-2xl px-4 py-3 text-left hover:bg-purple-100 transition-colors">
-              <Package className="w-5 h-5 text-purple-600 flex-shrink-0" />
-              <p className="flex-1 text-sm font-bold text-purple-800">
-                {stats.readyToStow} tote{stats.readyToStow !== 1 ? 's' : ''} ready to stow
-              </p>
-              <ArrowRight className="w-4 h-4 text-purple-400" />
-            </button>
-          )}
-        </div>
-      )}
+      {/* Top summary row */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatCard
+          label="Inbound Today"
+          value={stats.receivedToday}
+          total={stats.expectedToday || undefined}
+          subtext={stats.expectedToday > 0 ? `${stats.fullToday} full · ${stats.emptyToday} empty` : 'No pickups scheduled'}
+          icon={TruckIcon}
+        />
+        <StatCard
+          label="Unstowed"
+          value={stats.unstowed}
+          subtext="On the floor, awaiting a bin"
+          icon={Package}
+          valueColor="text-amber-600"
+          linkLabel="View in Inventory"
+          linkHref="/admin/totes"
+        />
+        <StatCard
+          label="Open Pick Lists"
+          value={stats.openPickLists}
+          subtext={`${stats.openPickListTotes} totes across ${stats.openPickLists} list${stats.openPickLists !== 1 ? 's' : ''}`}
+          icon={ClipboardList}
+          valueColor="text-blue-600"
+          linkLabel="View Picking Overview"
+          linkHref="/admin/pick-lists"
+        />
+        <StatCard
+          label="Staged & Ready"
+          value={stats.stagedReady}
+          subtext="Complete, ready for truck"
+          icon={CheckCircle2}
+          valueColor="text-green-600"
+        />
+        <StatCard
+          label="Bin Capacity"
+          value={stats.binSpacesAvailable}
+          total={stats.binTotalCapacity}
+          subtext="empty of total capacity"
+          icon={Boxes}
+          linkLabel="View in Inventory"
+          linkHref="/admin/totes"
+        />
+      </div>
 
-      {/* Business metrics — all tappable */}
-      <section>
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Business</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => router.push('/admin/billing')}
-            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
-            <span className="text-2xl">💰</span>
-            <p className="font-black text-2xl mt-1 text-green-600">${stats.mrr.toFixed(0)}</p>
-            <p className="text-xs text-gray-500 mt-1">Monthly Revenue</p>
-          </button>
-          <button onClick={() => router.push('/admin/customers')}
-            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
-            <Users className="w-7 h-7 text-brand-blue mx-auto" />
-            <p className="font-black text-2xl mt-1 text-brand-navy">{stats.activeCustomers}</p>
-            <p className="text-xs text-gray-500 mt-1">Active Customers</p>
-          </button>
+      {/* Driver Operations */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Driver Operations — Today</h2>
+          <span className="text-[10px] text-gray-400 font-semibold">6:00a–2:00p shift · {elapsedPct}% elapsed</span>
         </div>
-      </section>
-
-      {/* Tote status — all tappable */}
-      <section>
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Totes</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => router.push('/admin/totes?status=stored')}
-            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
-            <Warehouse className="w-7 h-7 text-brand-blue mx-auto" />
-            <p className="font-black text-2xl mt-1 text-brand-navy">{stats.storedTotes}</p>
-            <p className="text-xs text-gray-500 mt-1">Stored in Warehouse</p>
-          </button>
-          <button onClick={() => router.push('/admin/totes?status=empty_at_customer')}
-            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
-            <Package className="w-7 h-7 text-gray-400 mx-auto" />
-            <p className="font-black text-2xl mt-1 text-gray-600">{stats.emptyAtCustomer}</p>
-            <p className="text-xs text-gray-500 mt-1">At Customer</p>
-          </button>
-          <button onClick={() => router.push('/admin/totes?status=in_transit')}
-            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
-            <Truck className="w-7 h-7 text-yellow-500 mx-auto" />
-            <p className="font-black text-2xl mt-1 text-yellow-600">{stats.inTransit}</p>
-            <p className="text-xs text-gray-500 mt-1">In Transit</p>
-          </button>
-          <button onClick={() => router.push('/admin/totes')}
-            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
-            <Package className="w-7 h-7 text-brand-navy/40 mx-auto" />
-            <p className="font-black text-2xl mt-1 text-brand-navy">
-              {stats.storedTotes + stats.emptyAtCustomer + stats.inTransit + stats.readyToStow}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Routes Today</p>
+              {stats.routesCreated < stats.routesTarget && (
+                <span className="status-pill text-[10px] font-bold bg-red-100 text-red-700">Needs Attention</span>
+              )}
+            </div>
+            <p className="font-black text-2xl text-brand-navy">
+              {stats.routesCreated}<span className="text-gray-300 text-lg font-bold"> / {stats.routesTarget}</span>
             </p>
-            <p className="text-xs text-gray-500 mt-1">Total Totes</p>
-          </button>
-        </div>
-      </section>
-
-      {/* Today's operations — all tappable */}
-      <section>
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Today</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => router.push('/admin/monitor')}
-            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
-            <Radio className="w-7 h-7 text-brand-blue mx-auto" />
-            <p className="font-black text-2xl mt-1 text-brand-navy">
-              {stats.routesActive}<span className="text-gray-400 text-lg font-semibold">/{stats.routesTotal}</span>
+            <p className="text-xs text-gray-400">
+              {stats.routesTarget - stats.routesCreated > 0
+                ? `${stats.routesTarget - stats.routesCreated} route${stats.routesTarget - stats.routesCreated !== 1 ? 's' : ''} still need to be created`
+                : 'All active drivers have a route today'}
             </p>
-            <p className="text-xs text-gray-500 mt-1">Routes Active</p>
-          </button>
-          <button onClick={() => router.push('/admin/routes/new')}
-            className="card text-center py-4 hover:shadow-md transition-shadow active:scale-[0.98]">
-            <Navigation className="w-7 h-7 text-brand-navy/50 mx-auto" />
-            <p className="font-black text-2xl mt-1 text-brand-navy">{stats.routesTotal}</p>
-            <p className="text-xs text-gray-500 mt-1">Routes Today</p>
-          </button>
+          </div>
+          <PaceIndicator
+            label="Empty Totes Delivered"
+            current={stats.emptyTotesDelivered}
+            target={stats.emptyTotesDeliveredTarget}
+            elapsedPct={elapsedPct}
+          />
+          <PaceIndicator
+            label="Full Totes Picked Up"
+            current={stats.fullTotesPickedUp}
+            target={stats.fullTotesPickedUpTarget}
+            elapsedPct={elapsedPct}
+          />
         </div>
       </section>
 
-      {/* Quick actions */}
-      <section>
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Quick Actions</h2>
-        <div className="space-y-2">
-          {generatedId && (
-            <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
-              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm font-bold text-green-800">Pick List {generatedId} created</p>
-                <p className="text-xs text-green-600">Warehouse can now start picking</p>
-              </div>
-              <button onClick={() => setGeneratedId(null)} className="text-green-400 text-lg leading-none">×</button>
+      {/* Quick Actions — Generate Pick List stays here until the dedicated
+          Pick page (Phase 4) exists to host it */}
+      <section className="space-y-3 max-w-md">
+        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Quick Actions</h2>
+        {generatedId && (
+          <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
+            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-bold text-green-800">Pick List {generatedId} created</p>
+              <p className="text-xs text-green-600">Warehouse can now start picking</p>
             </div>
-          )}
-          <button
-            onClick={generatePickList}
-            disabled={generating}
-            className="w-full flex items-center gap-4 bg-white border-2 border-brand-blue text-brand-navy rounded-2xl px-5 py-4 hover:bg-blue-50 active:scale-[0.98] transition-all disabled:opacity-60"
-          >
-            <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center flex-shrink-0">
-              {generating ? <Loader2 className="w-5 h-5 text-brand-blue animate-spin" /> : <ClipboardList className="w-5 h-5 text-brand-blue" />}
-            </div>
-            <div className="text-left flex-1">
-              <p className="font-bold text-sm">{generating ? 'Generating…' : 'Generate Pick List'}</p>
-              <p className="text-xs text-gray-400">Pulls all pending-pick totes from warehouse</p>
-            </div>
-            <ArrowRight className="w-4 h-4 text-gray-300" />
-          </button>
-        </div>
+            <button onClick={() => setGeneratedId(null)} className="text-green-400 text-lg leading-none">×</button>
+          </div>
+        )}
+        <button
+          onClick={generatePickList}
+          disabled={generating}
+          className="w-full flex items-center gap-4 bg-white border-2 border-brand-blue text-brand-navy rounded-2xl px-5 py-4 hover:bg-blue-50 active:scale-[0.98] transition-all disabled:opacity-60"
+        >
+          <div className="w-10 h-10 bg-brand-blue/10 rounded-xl flex items-center justify-center flex-shrink-0">
+            {generating ? <Loader2 className="w-5 h-5 text-brand-blue animate-spin" /> : <ClipboardList className="w-5 h-5 text-brand-blue" />}
+          </div>
+          <div className="text-left flex-1">
+            <p className="font-bold text-sm">{generating ? 'Generating…' : 'Generate Pick List'}</p>
+            <p className="text-xs text-gray-400">Pulls all pending-pick totes from warehouse</p>
+          </div>
+          <ArrowRight className="w-4 h-4 text-gray-300" />
+        </button>
       </section>
-
     </div>
   )
 }

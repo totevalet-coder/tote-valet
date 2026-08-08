@@ -117,6 +117,74 @@ export type Database = {
           },
         ]
       }
+      dashboard_thresholds: {
+        Row: {
+          empty_bins_critical: number
+          empty_bins_warn: number
+          empty_totes_pace_amber_pts: number
+          empty_totes_pace_red_pts: number
+          full_totes_pace_amber_pts: number
+          full_totes_pace_red_pts: number
+          id: number
+          open_pick_totes_critical: number
+          open_pick_totes_warn: number
+          picks_completed_pace_amber_pts: number
+          picks_completed_pace_red_pts: number
+          region_id: string
+          routes_today_critical: number
+          routes_today_warn: number
+          unstowed_critical: number
+          unstowed_warn: number
+          updated_at: string
+        }
+        Insert: {
+          empty_bins_critical?: number
+          empty_bins_warn?: number
+          empty_totes_pace_amber_pts?: number
+          empty_totes_pace_red_pts?: number
+          full_totes_pace_amber_pts?: number
+          full_totes_pace_red_pts?: number
+          id?: number
+          open_pick_totes_critical?: number
+          open_pick_totes_warn?: number
+          picks_completed_pace_amber_pts?: number
+          picks_completed_pace_red_pts?: number
+          region_id?: string
+          routes_today_critical?: number
+          routes_today_warn?: number
+          unstowed_critical?: number
+          unstowed_warn?: number
+          updated_at?: string
+        }
+        Update: {
+          empty_bins_critical?: number
+          empty_bins_warn?: number
+          empty_totes_pace_amber_pts?: number
+          empty_totes_pace_red_pts?: number
+          full_totes_pace_amber_pts?: number
+          full_totes_pace_red_pts?: number
+          id?: number
+          open_pick_totes_critical?: number
+          open_pick_totes_warn?: number
+          picks_completed_pace_amber_pts?: number
+          picks_completed_pace_red_pts?: number
+          region_id?: string
+          routes_today_critical?: number
+          routes_today_warn?: number
+          unstowed_critical?: number
+          unstowed_warn?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dashboard_thresholds_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       errors: {
         Row: {
           admin_notes: string | null
@@ -740,3 +808,4 @@ export type Tote = Database['public']['Tables']['totes']['Row']
 export type Route = Database['public']['Tables']['routes']['Row']
 export type PickList = Database['public']['Tables']['pick_lists']['Row']
 export type Region = Database['public']['Tables']['regions']['Row']
+export type DashboardThresholds = Database['public']['Tables']['dashboard_thresholds']['Row']

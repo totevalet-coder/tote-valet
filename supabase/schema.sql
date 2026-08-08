@@ -232,6 +232,35 @@ create index idx_errors_resolved on errors(resolved);
 create index idx_errors_region_id on errors(region_id);
 
 -- ============================================================
+-- SECTION 4.7 — DASHBOARD THRESHOLDS TABLE
+-- Single-row table (id=1 enforced) holding every Operations Console
+-- Dashboard alert threshold, configured at Settings > Thresholds.
+-- No per-user overrides — applies to every dashboard immediately.
+-- ============================================================
+
+create table dashboard_thresholds (
+  id                              int primary key default 1 check (id = 1),
+  unstowed_warn                   int not null default 5,
+  unstowed_critical               int not null default 15,
+  routes_today_warn               int not null default 1,
+  routes_today_critical           int not null default 3,
+  empty_totes_pace_amber_pts      int not null default 10,   -- amber if behind pace by N points
+  empty_totes_pace_red_pts        int not null default 25,
+  full_totes_pace_amber_pts       int not null default 10,
+  full_totes_pace_red_pts         int not null default 25,
+  picks_completed_pace_amber_pts  int not null default 10,
+  picks_completed_pace_red_pts    int not null default 25,
+  empty_bins_warn                 int not null default 10,   -- inverted: low is bad
+  empty_bins_critical             int not null default 4,
+  open_pick_totes_warn            int not null default 48,
+  open_pick_totes_critical        int not null default 78,
+  region_id                       uuid not null default get_default_region_id() references regions(id),
+  updated_at                      timestamptz not null default now()
+);
+
+insert into dashboard_thresholds (id) values (1) on conflict (id) do nothing;
+
+-- ============================================================
 -- AUTO-UPDATE updated_at TIMESTAMPS
 -- ============================================================
 
@@ -256,6 +285,9 @@ create trigger pick_lists_updated_at before update on pick_lists
   for each row execute function update_updated_at();
 
 create trigger errors_updated_at before update on errors
+  for each row execute function update_updated_at();
+
+create trigger dashboard_thresholds_updated_at before update on dashboard_thresholds
   for each row execute function update_updated_at();
 
 -- ============================================================
@@ -367,6 +399,12 @@ create policy "errors_admin_all" on errors
 create policy "errors_driver_insert" on errors
   for insert with check (get_my_role() in ('driver','admin'));
 
+-- Dashboard thresholds: admin only (Operations Console Settings > Thresholds)
+alter table dashboard_thresholds enable row level security;
+
+create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
+  for all using (get_my_role() = 'admin');
+
 -- ============================================================
 -- SUPABASE STORAGE BUCKETS (run separately in dashboard or via API)
 -- ============================================================
@@ -468,6 +506,50 @@ create policy "errors_driver_insert" on errors
 --   created_at      timestamptz not null default now(),
 --   updated_at      timestamptz not null default now()
 -- );
+
+-- ⬜ PENDING — dashboard_thresholds table (Operations Console rebuild, Section 4.7
+-- above). Run this whole block in the Supabase SQL editor, then flip this to ✅ Done.
+-- Written as CREATE TABLE IF NOT EXISTS / IF NOT EXISTS everywhere so it's safe to
+-- re-run, matching the regions migration's style above.
+--
+-- CREATE TABLE IF NOT EXISTS dashboard_thresholds (
+--   id                              int primary key default 1 check (id = 1),
+--   unstowed_warn                   int not null default 5,
+--   unstowed_critical               int not null default 15,
+--   routes_today_warn               int not null default 1,
+--   routes_today_critical           int not null default 3,
+--   empty_totes_pace_amber_pts      int not null default 10,
+--   empty_totes_pace_red_pts        int not null default 25,
+--   full_totes_pace_amber_pts       int not null default 10,
+--   full_totes_pace_red_pts         int not null default 25,
+--   picks_completed_pace_amber_pts  int not null default 10,
+--   picks_completed_pace_red_pts    int not null default 25,
+--   empty_bins_warn                 int not null default 10,
+--   empty_bins_critical             int not null default 4,
+--   open_pick_totes_warn            int not null default 48,
+--   open_pick_totes_critical        int not null default 78,
+--   region_id                       uuid not null default get_default_region_id() references regions(id),
+--   updated_at                      timestamptz not null default now()
+-- );
+--
+-- INSERT INTO dashboard_thresholds (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+--
+-- CREATE OR REPLACE FUNCTION update_updated_at()
+-- RETURNS trigger AS $$
+-- BEGIN NEW.updated_at = now(); RETURN NEW; END;
+-- $$ LANGUAGE plpgsql;
+--
+-- DROP TRIGGER IF EXISTS dashboard_thresholds_updated_at ON dashboard_thresholds;
+-- CREATE TRIGGER dashboard_thresholds_updated_at BEFORE UPDATE ON dashboard_thresholds
+--   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+--
+-- ALTER TABLE dashboard_thresholds ENABLE ROW LEVEL SECURITY;
+--
+-- DROP POLICY IF EXISTS "dashboard_thresholds_admin_all" ON dashboard_thresholds;
+-- CREATE POLICY "dashboard_thresholds_admin_all" ON dashboard_thresholds
+--   FOR ALL USING (get_my_role() = 'admin');
+--
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.dashboard_thresholds TO authenticated;
 
 -- ============================================================
 -- SEED DATA: Default bin setup (rows A, B, C — 10 totes each)
