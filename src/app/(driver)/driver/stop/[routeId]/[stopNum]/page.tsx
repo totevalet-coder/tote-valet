@@ -230,18 +230,26 @@ export default function StopDetailPage() {
   }
 
   // Fires whenever a stop transitions to completed (normal or force) —
-  // writes the "delivered" moment back to the order that produced this stop,
-  // if any. Only tote_requests orders have anywhere to record it; legacy
-  // pickup_requested-flag orders (no tote_requests row) are left as-is,
-  // consistent with their already-reduced tracking elsewhere in Orders.
-  // Best-effort: a failure here shouldn't block the stop, which already
-  // completed successfully.
+  // writes the "delivered" moment back to the order that produced this
+  // stop, and (for pickups) clears totes.pickup_requested so My Items
+  // stops showing a stale "Pickup Requested" badge on totes that are
+  // already stowed. Routed through a server API using the service-role
+  // key instead of writing tote_requests directly from here: the driver
+  // client has no documented write grant on that table (see CLAUDE.md's
+  // GRANTs section — tote_requests was never added to it), so a direct
+  // .update() here could silently do nothing, which is exactly what was
+  // happening in practice. Best-effort either way: a failure here
+  // shouldn't block the stop, which already completed successfully.
   async function completeLinkedOrder(s: RouteStop) {
-    if (s.order_ref?.source !== 'tote_request') return
-    await supabase.from('tote_requests').update({
-      status: 'complete',
-      completed_at: new Date().toISOString(),
-    }).eq('id', s.order_ref.sourceId)
+    try {
+      await fetch('/api/complete-route-stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toteIds: s.tote_ids, type: s.type, orderRef: s.order_ref }),
+      })
+    } catch {
+      // Network hiccup — non-fatal, see comment above.
+    }
   }
 
   async function flagSealMismatch(toteId: string, expected: string | null, scanned: string) {
