@@ -349,7 +349,17 @@ export default function LoadTruckPage() {
                 .from('routes')
                 .update({ status: 'in_progress' })
                 .eq('id', route.id)
-              router.push('/driver')
+              // Go straight into the route instead of landing on /driver and
+              // making the driver tap a second "Start Delivering Route"
+              // button there — this button already IS that confirmation.
+              const firstPending = (route.stops as RouteStop[]).find(s => !s.completed)
+              if (firstPending) {
+                const encoded = encodeURIComponent(firstPending.address)
+                window.open(`https://www.google.com/maps/dir/?api=1&destination=${encoded}`, '_blank')
+                router.push(`/driver/stop/${route.id}/${firstPending.stop_number}`)
+              } else {
+                router.push('/driver')
+              }
             }}
             className="w-full bg-brand-navy text-white rounded-2xl py-4 font-black text-base hover:bg-blue-900 active:scale-[0.98] transition-all shadow-lg"
           >
