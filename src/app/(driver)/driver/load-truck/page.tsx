@@ -52,7 +52,25 @@ export default function LoadTruckPage() {
       .order('created_at', { ascending: false })
       .limit(1)
 
-    if (routes && routes.length > 0) setRoute(routes[0] as Route)
+    if (routes && routes.length > 0) {
+      const r = routes[0] as Route
+      setRoute(r)
+
+      // Generic-empty tote_ids only ever get added via an actual physical
+      // scan (there's no dispatcher pre-assignment path for them) -- so
+      // unlike dispatcher-assigned totes, which still need a fresh scan each
+      // session to confirm physical possession, these were already confirmed
+      // the moment they were first scanned. Pre-mark them loaded instead of
+      // asking the driver to re-scan totes they've already scanned once.
+      const preLoaded: LoadedTote[] = []
+      for (const stop of r.stops as RouteStop[]) {
+        if (stop.type !== 'delivery' || !stop.expected_empty_count) continue
+        for (const toteId of stop.tote_ids) {
+          preLoaded.push({ toteId, sealNumber: null, customerName: stop.customer_name, generic: true })
+        }
+      }
+      if (preLoaded.length > 0) setLoadedTotes(preLoaded)
+    }
     setLoading(false)
   }, [supabase])
 
