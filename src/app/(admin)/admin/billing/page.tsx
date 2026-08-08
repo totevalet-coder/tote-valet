@@ -6,9 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 import type { Customer } from '@/types/database'
 import {
   DollarSign, AlertTriangle, Package, Loader2, CheckCircle2,
-  RefreshCw, Warehouse
+  RefreshCw, Warehouse, Users
 } from 'lucide-react'
 import { calcMonthlyTotal, MISSING_TOTE_CHARGE, formatCurrency } from '@/lib/billing'
+import StatCard from '@/components/admin/StatCard'
 
 type BillingTab = 'summary' | 'by-customer' | 'failed' | 'missing-totes'
 
@@ -130,11 +131,11 @@ function BillingContent() {
     load()
   }
 
-  if (loading) return <div className="px-5 pt-6 space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 bg-gray-200 rounded-2xl animate-pulse" />)}</div>
+  if (loading) return <div className="p-6 space-y-3">{[1,2,3].map(i => <div key={i} className="h-24 bg-gray-200 rounded-2xl animate-pulse" />)}</div>
 
   return (
-    <div className="px-5 pt-6 pb-6 space-y-5">
-      <h1 className="font-black text-2xl text-brand-navy">Billing</h1>
+    <div className="p-6 space-y-5 max-w-[1400px]">
+      <h1 className="font-black text-2xl text-brand-navy">Finance</h1>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
         {TABS.map(t => (
@@ -148,19 +149,18 @@ function BillingContent() {
       {/* Summary */}
       {tab === 'summary' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: 'Monthly Revenue', value: formatCurrency(mrr), emoji: '💰', color: 'text-green-600' },
-              { label: 'Active Customers', value: activeCustomers.length, emoji: '👥', color: 'text-brand-navy' },
-              { label: 'Uncollected', value: formatCurrency(uncollected), emoji: '⚠️', color: uncollected > 0 ? 'text-red-600' : 'text-gray-400' },
-              { label: 'Failed Payments', value: failedCustomers.length, emoji: '❌', color: failedCustomers.length > 0 ? 'text-red-600' : 'text-gray-400' },
-            ].map(({ label, value, emoji, color }) => (
-              <div key={label} className="card text-center py-4">
-                <span className="text-2xl">{emoji}</span>
-                <p className={`font-black text-2xl mt-1 ${color}`}>{value}</p>
-                <p className="text-xs text-gray-500 mt-1">{label}</p>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard label="Monthly Revenue" value={formatCurrency(mrr)} icon={DollarSign} valueColor="text-green-600" />
+            <StatCard label="Active Customers" value={activeCustomers.length} icon={Users} />
+            <StatCard
+              label="Uncollected" value={formatCurrency(uncollected)} icon={AlertTriangle}
+              valueColor={uncollected > 0 ? 'text-red-600' : 'text-gray-400'}
+            />
+            <StatCard
+              label="Failed Payments" value={failedCustomers.length} icon={AlertTriangle}
+              valueColor={failedCustomers.length > 0 ? 'text-red-600' : 'text-gray-400'}
+              linkLabel="View in Errors" linkHref="/admin/errors"
+            />
           </div>
 
           {/* MRR bar by month — placeholder */}
