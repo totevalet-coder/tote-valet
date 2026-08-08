@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { RouteStop, PickListBin } from '@/types/database'
+import type { RouteStop, PickListBin, DashboardThresholds } from '@/types/database'
 import {
   Package, ClipboardList, Boxes, Truck as TruckIcon, CheckCircle2,
 } from 'lucide-react'
@@ -33,6 +33,17 @@ interface DashboardStats {
   fullTotesPickedUpTarget: number
   emptyTotesDelivered: number
   emptyTotesDeliveredTarget: number
+  thresholds: DashboardThresholds | null
+}
+
+// Direct (high = bad) or inverted (low = bad) threshold coloring, shared by
+// every stat tile whose color is driven by Settings > Thresholds.
+function thresholdColor(value: number, warn: number, critical: number, invert = false) {
+  const bad = invert ? value <= critical : value >= critical
+  const warning = invert ? value <= warn : value >= warn
+  if (bad) return 'text-red-600'
+  if (warning) return 'text-amber-600'
+  return 'text-brand-navy'
 }
 
 // Fixed 6:00a–2:00p shift window used to compute "% of shift elapsed" for the
@@ -61,13 +72,15 @@ export default function AdminDashboard() {
 
     const today = new Date().toISOString().split('T')[0]
 
-    const [totesRes, binsRes, pickListsRes, driversRes, todaysRoutesRes] = await Promise.all([
+    const [totesRes, binsRes, pickListsRes, driversRes, todaysRoutesRes, thresholdsRes] = await Promise.all([
       supabase.from('totes').select('id, status, items'),
       supabase.from('bins').select('capacity, current_count'),
       supabase.from('pick_lists').select('id, bins').neq('status', 'complete'),
       supabase.from('customers').select('id', { count: 'exact', head: true }).eq('role', 'driver').eq('status', 'active'),
       supabase.from('routes').select('id, stops').eq('date', today),
+      supabase.from('dashboard_thresholds').select('*').eq('id', 1).maybeSingle(),
     ])
+    const thresholds = thresholdsRes.data as DashboardThresholds | null
 
     const totes = totesRes.data ?? []
     const bins = binsRes.data ?? []
@@ -149,6 +162,7 @@ export default function AdminDashboard() {
       routesCreated, routesTarget,
       fullTotesPickedUp, fullTotesPickedUpTarget,
       emptyTotesDelivered, emptyTotesDeliveredTarget,
+      thresholds,
     })
     setLoading(false)
   }, [supabase, router])
@@ -165,6 +179,17 @@ export default function AdminDashboard() {
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
   const elapsedPct = getShiftElapsedPct()
+  // Fall back to the same defaults seeded in the schema if the row is somehow missing
+  const t = stats.thresholds ?? {
+    unstowed_warn: 5, unstowed_critical: 15,
+    routes_today_warn: 1, routes_today_critical: 3,
+    empty_totes_pace_amber_pts: 10, empty_totes_pace_red_pts: 25,
+    full_totes_pace_amber_pts: 10, full_totes_pace_red_pts: 25,
+    empty_bins_warn: 10, empty_bins_critical: 4,
+    open_pick_totes_warn: 48, open_pick_totes_critical: 78,
+  }
+  const routesDeficit = stats.routesTarget - stats.routesCreated
+  const routesSeverity = routesDeficit >= t.routes_today_critical ? 'critical' : routesDeficit >= t.routes_today_warn ? 'warn' : 'ok'
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px]">
@@ -187,7 +212,7 @@ export default function AdminDashboard() {
           value={stats.unstowed}
           subtext="On the floor, awaiting a bin"
           icon={Package}
-          valueColor="text-amber-600"
+          valueColor={thresholdColor(stats.unstowed, t.unstowed_warn, t.unstowed_critical)}
           linkLabel="View in Inventory"
           linkHref="/admin/totes"
         />
@@ -196,7 +221,7 @@ export default function AdminDashboard() {
           value={stats.openPickLists}
           subtext={`${stats.openPickListTotes} totes across ${stats.openPickLists} list${stats.openPickLists !== 1 ? 's' : ''}`}
           icon={ClipboardList}
-          valueColor="text-blue-600"
+          valueColor={thresholdColor(stats.openPickListTotes, t.open_pick_totes_warn, t.open_pick_totes_critical)}
           linkLabel="View Picking Overview"
           linkHref="/admin/pick-lists"
         />
@@ -213,6 +238,7 @@ export default function AdminDashboard() {
           total={stats.binTotalCapacity}
           subtext="empty of total capacity"
           icon={Boxes}
+          valueColor={thresholdColor(stats.binSpacesAvailable, t.empty_bins_warn, t.empty_bins_critical, true)}
           linkLabel="View in Inventory"
           linkHref="/admin/totes"
         />
@@ -228,16 +254,18 @@ export default function AdminDashboard() {
           <div className="card p-5 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Routes Today</p>
-              {stats.routesCreated < stats.routesTarget && (
-                <span className="status-pill text-[10px] font-bold bg-red-100 text-red-700">Needs Attention</span>
+              {routesSeverity !== 'ok' && (
+                <span className={`status-pill text-[10px] font-bold ${routesSeverity === 'critical' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                  Needs Attention
+                </span>
               )}
             </div>
             <p className="font-black text-2xl text-brand-navy">
               {stats.routesCreated}<span className="text-gray-300 text-lg font-bold"> / {stats.routesTarget}</span>
             </p>
             <p className="text-xs text-gray-400">
-              {stats.routesTarget - stats.routesCreated > 0
-                ? `${stats.routesTarget - stats.routesCreated} route${stats.routesTarget - stats.routesCreated !== 1 ? 's' : ''} still need to be created`
+              {routesDeficit > 0
+                ? `${routesDeficit} route${routesDeficit !== 1 ? 's' : ''} still need to be created`
                 : 'All active drivers have a route today'}
             </p>
           </div>
@@ -246,12 +274,16 @@ export default function AdminDashboard() {
             current={stats.emptyTotesDelivered}
             target={stats.emptyTotesDeliveredTarget}
             elapsedPct={elapsedPct}
+            amberPts={t.empty_totes_pace_amber_pts}
+            redPts={t.empty_totes_pace_red_pts}
           />
           <PaceIndicator
             label="Full Totes Picked Up"
             current={stats.fullTotesPickedUp}
             target={stats.fullTotesPickedUpTarget}
             elapsedPct={elapsedPct}
+            amberPts={t.full_totes_pace_amber_pts}
+            redPts={t.full_totes_pace_red_pts}
           />
         </div>
       </section>

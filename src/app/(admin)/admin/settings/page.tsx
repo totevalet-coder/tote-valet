@@ -74,7 +74,7 @@ function SettingsContent() {
   ]
 
   return (
-    <div className="px-5 pt-6 pb-6 space-y-5">
+    <div className="p-6 space-y-5 max-w-3xl">
       <h1 className="font-black text-2xl text-brand-navy">Settings</h1>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -84,6 +84,10 @@ function SettingsContent() {
             {t.label}
           </button>
         ))}
+        <button onClick={() => router.push('/admin/settings/thresholds')}
+          className="px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap flex-shrink-0 bg-gray-100 text-gray-500 hover:bg-gray-200 transition-all flex items-center gap-1.5">
+          Thresholds <ChevronRight className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Pricing */}
