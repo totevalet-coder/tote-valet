@@ -507,10 +507,10 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 --   updated_at      timestamptz not null default now()
 -- );
 
--- ⬜ PENDING — dashboard_thresholds table (Operations Console rebuild, Section 4.7
--- above). Run this whole block in the Supabase SQL editor, then flip this to ✅ Done.
--- Written as CREATE TABLE IF NOT EXISTS / IF NOT EXISTS everywhere so it's safe to
--- re-run, matching the regions migration's style above.
+-- ✅ Done — dashboard_thresholds table (Operations Console rebuild, Section 4.7
+-- above). Applied by user 2026-08-06. Written as CREATE TABLE IF NOT EXISTS /
+-- IF NOT EXISTS everywhere so it's safe to re-run, matching the regions
+-- migration's style above.
 --
 -- CREATE TABLE IF NOT EXISTS dashboard_thresholds (
 --   id                              int primary key default 1 check (id = 1),
