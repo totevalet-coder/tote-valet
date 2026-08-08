@@ -90,6 +90,7 @@ export default function AdminCustomersPage() {
               <thead>
                 <tr className="border-b border-gray-100 text-left">
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Customer</th>
+                  <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Email</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Address</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Totes</th>
                   <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Monthly</th>
@@ -114,7 +115,8 @@ export default function AdminCustomersPage() {
                         <span className="font-semibold text-brand-navy">{c.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 truncate max-w-[220px]">{c.address ?? c.email}</td>
+                    <td className="px-4 py-3 text-gray-500 truncate max-w-[200px]">{c.email}</td>
+                    <td className="px-4 py-3 text-gray-500 truncate max-w-[220px]">{c.address ?? <span className="text-gray-300">—</span>}</td>
                     <td className="px-4 py-3 text-gray-600">{toteCounts[c.id] ?? 0}</td>
                     <td className="px-4 py-3 text-gray-600">{formatCurrency(c.monthly_total ?? 0)}/mo</td>
                     <td className="px-4 py-3">
