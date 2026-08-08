@@ -5,10 +5,13 @@ import { useRouter } from 'next/navigation'
 import { Search, Eye, LogOut, ChevronDown } from 'lucide-react'
 import { setViewAsRole, type ViewAsRole } from '@/lib/adminViewAs'
 
+// Sorter is deliberately not its own preview option here (user's explicit
+// call, 2026-08-08) — it's treated as part of Warehouse for View As
+// purposes. The 'sorter' role/portal itself is untouched; adminViewAs.ts's
+// ViewAsRole type still includes it since useRoleGuard etc. still need it.
 const VIEW_AS_OPTIONS: { role: ViewAsRole; label: string; desc: string; href: string }[] = [
   { role: 'driver',    label: 'Driver',    desc: 'Routes, stops, tote scanning',   href: '/driver' },
   { role: 'warehouse', label: 'Warehouse', desc: 'Scan & store, pick lists, sort', href: '/warehouse' },
-  { role: 'sorter',    label: 'Sorter',    desc: 'Sort dept, staging, load routes', href: '/sorter' },
   { role: 'customer',  label: 'Customer',  desc: 'Dashboard, my items, billing',   href: '/dashboard' },
 ]
 
