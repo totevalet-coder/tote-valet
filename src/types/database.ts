@@ -783,6 +783,11 @@ export interface RouteStop {
   address: string
   type: 'pickup' | 'delivery'
   tote_ids: string[]
+  // Delivery stops for generic/unassigned empty totes (e.g. a first-time
+  // empty-tote delivery) don't have specific tote_ids yet at route-creation
+  // time — this is how many the driver still needs to grab & scan at load
+  // time. Decrements as tote_ids gets filled in; 0/undefined once fulfilled.
+  expected_empty_count?: number
   seal_numbers?: string[]
   notes?: string
   completed: boolean

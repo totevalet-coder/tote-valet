@@ -144,6 +144,10 @@ export default function OrdersPage() {
       // Route) this order once the route actually saves, not before, since
       // the dispatcher can still edit or drop the stop up to that point.
       orderRef: { source: o.source, sourceId: o.sourceId },
+      // Empty-tote-delivery orders don't have specific tote IDs yet — the
+      // driver grabs generic empties and scans them at load time instead.
+      // Carry the requested quantity through so the stop knows how many.
+      expectedEmptyCount: (o.type === 'empty_tote_delivery' && o.toteIds.length === 0) ? (o.quantity ?? undefined) : undefined,
     }))
     const payload = JSON.stringify({ stops })
     if (payload.length < 1800) {

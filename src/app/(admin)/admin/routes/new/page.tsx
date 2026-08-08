@@ -21,6 +21,7 @@ interface StopDraft {
   toteIds: string[]
   notes: string
   orderRef?: OrderRef
+  expectedEmptyCount?: number
 }
 
 interface PrefillStop {
@@ -28,6 +29,7 @@ interface PrefillStop {
   toteIds: string[]
   type: 'pickup' | 'delivery'
   orderRef?: OrderRef
+  expectedEmptyCount?: number
 }
 
 function NewRouteContent() {
@@ -54,6 +56,10 @@ function NewRouteContent() {
   const [stopToteInput, setStopToteInput] = useState('')
   const [stopToteIds, setStopToteIds] = useState<string[]>([])
   const [stopToteError, setStopToteError] = useState('')
+  // Delivery stops only: specific totes you already know, vs. a quantity of
+  // generic empties the driver will grab off the dock and scan at load time.
+  const [deliveryMode, setDeliveryMode] = useState<'totes' | 'quantity'>('totes')
+  const [stopEmptyQuantity, setStopEmptyQuantity] = useState('4')
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -106,6 +112,7 @@ function NewRouteContent() {
           toteIds: ps.toteIds,
           notes: '',
           orderRef: ps.orderRef,
+          expectedEmptyCount: ps.expectedEmptyCount,
         }
       })
       setStops(prev => [...prev, ...drafts])
@@ -125,9 +132,20 @@ function NewRouteContent() {
     setStopToteError('')
   }
 
+  const useQuantityMode = stopType === 'delivery' && deliveryMode === 'quantity'
+
   function commitStop() {
     if (!stopCustomerId) return
-    if (stopToteIds.length === 0) { setStopToteError('Add at least one tote ID.'); return }
+
+    let expectedEmptyCount: number | undefined
+    if (useQuantityMode) {
+      const qty = parseInt(stopEmptyQuantity, 10)
+      if (!Number.isFinite(qty) || qty < 1) { setStopToteError('Enter how many empty totes are needed.'); return }
+      expectedEmptyCount = qty
+    } else if (stopToteIds.length === 0) {
+      setStopToteError('Add at least one tote ID.')
+      return
+    }
 
     const cust = customers.find(c => c.id === stopCustomerId)!
     setStops(prev => [...prev, {
@@ -137,14 +155,17 @@ function NewRouteContent() {
       address: cust.address ?? '',
       type: stopType,
       toteInput: '',
-      toteIds: stopToteIds,
+      toteIds: useQuantityMode ? [] : stopToteIds,
       notes: stopNotes,
+      expectedEmptyCount,
     }])
 
     // Reset add-stop form
     setAddingStop(false)
     setStopCustomerId('')
     setStopType('pickup')
+    setDeliveryMode('totes')
+    setStopEmptyQuantity('4')
     setStopNotes('')
     setStopToteInput('')
     setStopToteIds([])
@@ -173,6 +194,7 @@ function NewRouteContent() {
       address: s.address,
       type: s.type,
       tote_ids: s.toteIds,
+      expected_empty_count: s.expectedEmptyCount,
       seal_numbers: [],
       notes: s.notes || undefined,
       completed: false,
@@ -296,7 +318,11 @@ function NewRouteContent() {
                       <span className={`status-pill text-[10px] ${stop.type === 'pickup' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                         {stop.type}
                       </span>
-                      <span className="text-xs text-gray-400">{stop.toteIds.length} tote{stop.toteIds.length !== 1 ? 's' : ''}</span>
+                      {stop.expectedEmptyCount ? (
+                        <span className="text-xs text-purple-600 font-semibold">{stop.expectedEmptyCount} empties · driver scans at load</span>
+                      ) : (
+                        <span className="text-xs text-gray-400">{stop.toteIds.length} tote{stop.toteIds.length !== 1 ? 's' : ''}</span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -306,6 +332,16 @@ function NewRouteContent() {
 
                 {isExpanded && (
                   <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+                    {stop.expectedEmptyCount ? (
+                      <div className="bg-purple-50 border border-purple-200 rounded-xl px-3 py-2.5">
+                        <p className="text-xs font-semibold text-purple-700">
+                          No specific totes assigned — {stop.expectedEmptyCount} generic empt{stop.expectedEmptyCount !== 1 ? 'ies' : 'y'} needed
+                        </p>
+                        <p className="text-[11px] text-purple-500 mt-0.5">
+                          The driver will grab {stop.expectedEmptyCount} empty totes and scan them at Load Truck.
+                        </p>
+                      </div>
+                    ) : null}
                     <div className="space-y-1.5">
                       {stop.toteIds.map(tid => (
                         <div key={tid} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
@@ -376,6 +412,44 @@ function NewRouteContent() {
             </div>
           </div>
 
+          {stopType === 'delivery' && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">What totes are going out?</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDeliveryMode('totes')}
+                  className={`flex-1 py-2.5 rounded-xl border-2 text-xs font-bold transition-colors ${
+                    deliveryMode === 'totes' ? 'border-brand-blue bg-blue-50 text-brand-blue' : 'border-gray-200 text-gray-500'
+                  }`}
+                >
+                  Specific Totes
+                </button>
+                <button
+                  onClick={() => setDeliveryMode('quantity')}
+                  className={`flex-1 py-2.5 rounded-xl border-2 text-xs font-bold transition-colors ${
+                    deliveryMode === 'quantity' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 text-gray-500'
+                  }`}
+                >
+                  Quantity — Driver Picks at Load
+                </button>
+              </div>
+            </div>
+          )}
+
+          {useQuantityMode ? (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Empty Totes Needed</label>
+              <input
+                type="number" min={1} value={stopEmptyQuantity}
+                onChange={e => { setStopEmptyQuantity(e.target.value); setStopToteError('') }}
+                className="input-field w-24"
+              />
+              <p className="text-xs text-gray-400 mt-1.5">
+                No specific tote IDs — the driver will grab this many empty totes from the dock and scan them at Load Truck.
+              </p>
+              {stopToteError && <p className="text-xs text-red-600 mt-1">{stopToteError}</p>}
+            </div>
+          ) : (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               Tote IDs <span className="text-gray-400 font-normal">({stopToteIds.length} added)</span>
@@ -413,6 +487,7 @@ function NewRouteContent() {
               </div>
             )}
           </div>
+          )}
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Customer Notes <span className="text-gray-400 font-normal">(optional)</span></label>
@@ -427,7 +502,7 @@ function NewRouteContent() {
 
           <button
             onClick={commitStop}
-            disabled={!stopCustomerId || stopToteIds.length === 0}
+            disabled={!stopCustomerId || (useQuantityMode ? !stopEmptyQuantity : stopToteIds.length === 0)}
             className="w-full bg-brand-navy text-white rounded-xl py-3 font-bold text-sm disabled:opacity-40 hover:bg-blue-900 transition-colors"
           >
             Add Stop to Route

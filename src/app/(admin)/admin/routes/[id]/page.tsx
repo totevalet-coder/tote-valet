@@ -107,12 +107,17 @@ export default function AdminRouteDetailPage() {
                   <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                     <MapPin className="w-3 h-3" />{stop.address}
                   </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  <div className="mt-2 flex flex-wrap gap-1.5 items-center">
                     {stop.tote_ids.map(tid => (
                       <span key={tid} className="bg-gray-100 text-brand-navy text-xs font-mono font-semibold rounded-lg px-2 py-1 flex items-center gap-1">
                         <Package className="w-3 h-3 text-gray-400" />{tid}
                       </span>
                     ))}
+                    {stop.expected_empty_count && stop.expected_empty_count > stop.tote_ids.length ? (
+                      <span className="bg-purple-100 text-purple-700 text-xs font-semibold rounded-lg px-2 py-1">
+                        + {stop.expected_empty_count - stop.tote_ids.length} more empties (driver scans at load)
+                      </span>
+                    ) : null}
                   </div>
                   {stop.notes && (
                     <p className="text-xs text-yellow-700 bg-yellow-50 rounded-xl px-3 py-1.5 mt-2">{stop.notes}</p>

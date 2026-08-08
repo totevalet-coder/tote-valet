@@ -12,6 +12,8 @@ import StatCard from '@/components/admin/StatCard'
 
 interface EnrichedRoute extends Route {
   driverName: string
+  fullCount: number
+  emptyCount: number
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -40,9 +42,26 @@ export default function AdminRoutesPage() {
     const { data: routeData } = await q
     if (!routeData) { setLoading(false); setRefreshing(false); return }
 
+    // Full/empty breakdown needs each referenced tote's current item count.
+    const allToteIds = [...new Set((routeData as Route[]).flatMap(r => (r.stops as RouteStop[]).flatMap(s => s.tote_ids)))]
+    const itemCountByTote = new Map<string, number>()
+    if (allToteIds.length > 0) {
+      const { data: toteItems } = await supabase.from('totes').select('id, items').in('id', allToteIds)
+      for (const t of toteItems ?? []) itemCountByTote.set(t.id, ((t.items as { label: string }[] | null) ?? []).length)
+    }
+
     const enriched = await Promise.all((routeData as Route[]).map(async r => {
       const { data: driver } = await supabase.from('customers').select('name').eq('id', r.driver_id ?? '').single()
-      return { ...r, driverName: driver?.name ?? 'Unassigned' }
+      let fullCount = 0, emptyCount = 0
+      for (const s of r.stops as RouteStop[]) {
+        for (const toteId of s.tote_ids) {
+          if ((itemCountByTote.get(toteId) ?? 0) > 0) fullCount++
+          else emptyCount++
+        }
+        // Generic empties not yet scanned/registered — not real tote rows yet
+        emptyCount += Math.max(0, (s.expected_empty_count ?? 0) - s.tote_ids.length)
+      }
+      return { ...r, driverName: driver?.name ?? 'Unassigned', fullCount, emptyCount }
     }))
 
     setRoutes(enriched)
@@ -164,7 +183,12 @@ export default function AdminRoutesPage() {
                           <span className="text-xs text-gray-400 whitespace-nowrap">{done}/{stops.length}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{stops.reduce((n, s) => n + s.tote_ids.length, 0)}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+                        {r.emptyCount > 0 && <span>{r.emptyCount} empty</span>}
+                        {r.emptyCount > 0 && r.fullCount > 0 && <span className="text-gray-300"> · </span>}
+                        {r.fullCount > 0 && <span>{r.fullCount} full</span>}
+                        {r.emptyCount === 0 && r.fullCount === 0 && <span className="text-gray-300">—</span>}
+                      </td>
                       <td className="px-4 py-3"><ChevronRight className={`w-4 h-4 text-gray-300 transition-transform ${isSelected ? 'rotate-90' : ''}`} /></td>
                     </tr>
                   )
@@ -226,7 +250,11 @@ function StopDetail({ route, onViewFull }: { route: EnrichedRoute; onViewFull: (
                 <td className="px-3 py-2.5">
                   <span className={`status-pill text-[10px] ${s.type === 'pickup' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{s.type}</span>
                 </td>
-                <td className="px-3 py-2.5 text-gray-600">{s.tote_ids.length}</td>
+                <td className="px-3 py-2.5 text-gray-600">
+                  {s.expected_empty_count
+                    ? `${s.tote_ids.length}/${s.expected_empty_count} empties scanned`
+                    : s.tote_ids.length}
+                </td>
                 <td className="px-3 py-2.5">
                   {s.force_completed ? (
                     <span className="flex items-center gap-1 text-amber-600 font-semibold text-xs">
