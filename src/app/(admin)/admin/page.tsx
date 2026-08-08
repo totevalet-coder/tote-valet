@@ -213,8 +213,8 @@ export default function AdminDashboard() {
           subtext="On the floor, awaiting a bin"
           icon={Package}
           valueColor={thresholdColor(stats.unstowed, t.unstowed_warn, t.unstowed_critical)}
-          linkLabel="View in Inventory"
-          linkHref="/admin/totes"
+          linkLabel="View in Inbound"
+          linkHref="/admin/inbound"
         />
         <StatCard
           label="Open Pick Lists"
