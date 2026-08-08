@@ -105,6 +105,10 @@ export default function OrdersPage() {
       customerId: o.customerId,
       toteIds: o.toteIds,
       type: o.type === 'pickup' ? 'pickup' as const : 'delivery' as const,
+      // Carried through so the route builder can auto-acknowledge this order
+      // once the route actually saves — not before, since the dispatcher can
+      // still edit or drop the stop up to that point.
+      orderRef: { source: o.source, sourceId: o.sourceId },
     }))
     const payload = JSON.stringify({ stops })
     if (payload.length < 1800) {

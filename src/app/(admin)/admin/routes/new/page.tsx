@@ -6,6 +6,11 @@ import { createClient } from '@/lib/supabase/client'
 import type { Customer, RouteStop } from '@/types/database'
 import { ChevronLeft, Plus, X, Package, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 
+interface OrderRef {
+  source: 'tote_request' | 'pickup_flag'
+  sourceId: string
+}
+
 interface StopDraft {
   key: string
   customerId: string
@@ -15,12 +20,14 @@ interface StopDraft {
   toteInput: string
   toteIds: string[]
   notes: string
+  orderRef?: OrderRef
 }
 
 interface PrefillStop {
   customerId: string
   toteIds: string[]
   type: 'pickup' | 'delivery'
+  orderRef?: OrderRef
 }
 
 function NewRouteContent() {
@@ -98,6 +105,7 @@ function NewRouteContent() {
           toteInput: '',
           toteIds: ps.toteIds,
           notes: '',
+          orderRef: ps.orderRef,
         }
       })
       setStops(prev => [...prev, ...drafts])
@@ -186,6 +194,20 @@ function NewRouteContent() {
       setSaveError(error.message)
       setSaving(false)
       return
+    }
+
+    // Auto-acknowledge every order whose stop actually made it into this
+    // route -- only now, since the dispatcher could have edited or removed
+    // a pre-filled stop up to this point. Orders added manually (no
+    // orderRef) are untouched. Best-effort: a failure here shouldn't block
+    // the route itself, which already saved successfully.
+    const acked = stops.filter((s): s is StopDraft & { orderRef: OrderRef } => !!s.orderRef)
+    if (acked.length > 0) {
+      await Promise.all(acked.map(s =>
+        s.orderRef.source === 'tote_request'
+          ? supabase.from('tote_requests').update({ status: 'acknowledged' }).eq('id', s.orderRef.sourceId)
+          : supabase.from('totes').update({ pickup_requested: false }).eq('id', s.orderRef.sourceId)
+      ))
     }
 
     router.push('/admin/routes')
