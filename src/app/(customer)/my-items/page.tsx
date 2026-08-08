@@ -38,6 +38,14 @@ const FILTER_PILLS: { key: FilterPill; label: string }[] = [
   { key: 'empty_at_customer', label: 'At Home' },
 ]
 
+// ⚠️ TRIAL MODE (added 2026-08-08, per user request) — normally requires a
+// 24hr minimum lead time on preferred dates (min = tomorrow: `new
+// Date(Date.now() + 86400000)`). Temporarily relaxed to "today" across all
+// three preferred-date pickers below (pickup, return-empties, request-back)
+// so orders can be placed and delivered same-day while running trials.
+// REVERT once trials are done — see CLAUDE.md TODOs and project memory.
+const MIN_PREFERRED_DATE = new Date().toISOString().split('T')[0]
+
 function MyItemsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -568,7 +576,7 @@ function MyItemsContent() {
                       type="date"
                       value={pickupDate}
                       onChange={e => setPickupDate(e.target.value)}
-                      min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                      min={MIN_PREFERRED_DATE}
                       className="input-field"
                     />
                     <p className="text-xs text-gray-400 mt-1">We&apos;ll confirm the exact date once scheduled.</p>
@@ -837,7 +845,7 @@ function MyItemsContent() {
                       type="date"
                       value={emptyReturnDate}
                       onChange={e => setEmptyReturnDate(e.target.value)}
-                      min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                      min={MIN_PREFERRED_DATE}
                       className="input-field"
                     />
                     <p className="text-xs text-gray-400 mt-1">We&apos;ll confirm the exact date once scheduled.</p>
@@ -938,7 +946,7 @@ function MyItemsContent() {
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Preferred Delivery Date</label>
                 <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
-                  min={new Date(Date.now() + 86400000).toISOString().split('T')[0]} className="input-field" />
+                  min={MIN_PREFERRED_DATE} className="input-field" />
               </div>
               <button onClick={handleReturnSubmit} disabled={submitting}
                 className="btn-primary w-full flex items-center justify-center gap-2">

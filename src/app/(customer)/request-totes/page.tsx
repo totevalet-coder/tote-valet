@@ -9,6 +9,13 @@ import AlertBanner from '@/components/ui/AlertBanner'
 
 const QUICK_AMOUNTS = [1, 2, 3, 4]
 
+// ⚠️ TRIAL MODE (added 2026-08-08, per user request) — normally requires a
+// 24hr minimum lead time on preferred dates (min = tomorrow: `new
+// Date(Date.now() + 86400000)`). Temporarily relaxed to "today" so orders
+// can be placed and delivered same-day while running trials. REVERT once
+// trials are done — see CLAUDE.md TODOs and project memory.
+const MIN_PREFERRED_DATE = new Date().toISOString().split('T')[0]
+
 interface PendingDelivery {
   id: string
   quantity: number
@@ -205,7 +212,7 @@ export default function RequestTotesPage() {
           type="date"
           value={preferredDate}
           onChange={e => setPreferredDate(e.target.value)}
-          min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+          min={MIN_PREFERRED_DATE}
           className="input-field"
         />
         <p className="text-xs text-gray-400 mt-1">We&apos;ll confirm the exact date once scheduled.</p>
