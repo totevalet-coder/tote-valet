@@ -59,9 +59,6 @@ export default function OrdersPage() {
   const load = useCallback(async () => {
     setLoading(true)
     const [pickupRes, requestsRes] = await Promise.all([
-      // Legacy path: pickup_requested is a plain boolean, so there's no way
-      // to represent "en route" for it without a schema change — it just
-      // disappears once cleared, same as before. Always shown as Pending.
       supabase.from('totes').select('id, tote_name, customer_id, customers(name, address)').eq('pickup_requested', true),
       supabase.from('tote_requests')
         .select('id, type, quantity, tote_ids, preferred_date, customer_id, status, customers(name, address)')
@@ -70,19 +67,31 @@ export default function OrdersPage() {
 
     const rows: OrderRow[] = []
 
-    for (const t of (pickupRes.data ?? []) as { id: string; tote_name: string | null; customer_id: string; customers: { name: string; address: string | null } | null }[]) {
-      rows.push({
-        key: `pickup-flag-${t.id}`, source: 'pickup_flag', sourceId: t.id, type: 'pickup', status: 'pending',
-        customerId: t.customer_id, customerName: t.customers?.name ?? 'Unknown', customerAddress: t.customers?.address ?? null,
-        toteIds: [t.id], quantity: null, preferredDate: null,
-      })
-    }
-
-    for (const r of (requestsRes.data ?? []) as { id: string; type: string; quantity: number | null; tote_ids: string[] | null; preferred_date: string | null; customer_id: string; status: string; customers: { name: string; address: string | null } | null }[]) {
+    const requests = (requestsRes.data ?? []) as { id: string; type: string; quantity: number | null; tote_ids: string[] | null; preferred_date: string | null; customer_id: string; status: string; customers: { name: string; address: string | null } | null }[]
+    for (const r of requests) {
       rows.push({
         key: `request-${r.id}`, source: 'tote_request', sourceId: r.id, type: r.type as OrderType, status: toOrderStatus(r.status),
         customerId: r.customer_id, customerName: r.customers?.name ?? 'Unknown', customerAddress: r.customers?.address ?? null,
         toteIds: r.tote_ids ?? [], quantity: r.quantity, preferredDate: r.preferred_date,
+      })
+    }
+
+    // my-items' Request Pickup / Return Empties flows always write a
+    // tote_requests row AND flip pickup_requested=true for the same totes in
+    // one action — they're the same real-world event, not two independent
+    // orders. Skip any flagged tote already covered by a tote_requests row so
+    // it doesn't get double-counted; only genuinely orphaned flags (no
+    // matching request — a pre-existing-data edge case, not something the
+    // current flows produce) still show up via this legacy path, and since
+    // there's no way to track "en route" for those without a schema change,
+    // they always display as Pending.
+    const requestedToteIds = new Set(requests.flatMap(r => r.tote_ids ?? []))
+    for (const t of (pickupRes.data ?? []) as { id: string; tote_name: string | null; customer_id: string; customers: { name: string; address: string | null } | null }[]) {
+      if (requestedToteIds.has(t.id)) continue
+      rows.push({
+        key: `pickup-flag-${t.id}`, source: 'pickup_flag', sourceId: t.id, type: 'pickup', status: 'pending',
+        customerId: t.customer_id, customerName: t.customers?.name ?? 'Unknown', customerAddress: t.customers?.address ?? null,
+        toteIds: [t.id], quantity: null, preferredDate: null,
       })
     }
 

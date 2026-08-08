@@ -59,12 +59,19 @@ export default function Sidebar() {
   useEffect(() => {
     async function loadBadges() {
       const [requestsRes, pickupFlagsRes, errorsRes] = await Promise.all([
-        supabase.from('tote_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('totes').select('id', { count: 'exact', head: true }).eq('pickup_requested', true),
+        supabase.from('tote_requests').select('id, tote_ids').eq('status', 'pending'),
+        supabase.from('totes').select('id').eq('pickup_requested', true),
         supabase.from('errors').select('id', { count: 'exact', head: true }).eq('resolved', false),
       ])
+      const requests = requestsRes.data ?? []
+      // Every current pickup flow flips pickup_requested=true AND inserts a
+      // tote_requests row for the same totes in one action -- same order,
+      // not two. Skip flagged totes already covered by a request so the
+      // badge count matches what Orders actually shows, same dedupe as there.
+      const requestedToteIds = new Set(requests.flatMap(r => r.tote_ids ?? []))
+      const orphanedFlags = (pickupFlagsRes.data ?? []).filter(t => !requestedToteIds.has(t.id))
       setBadges({
-        orders: (requestsRes.count ?? 0) + (pickupFlagsRes.count ?? 0),
+        orders: requests.length + orphanedFlags.length,
         errors: errorsRes.count ?? 0,
       })
     }
