@@ -21,14 +21,12 @@ interface NavGroup {
   items: NavItem[]
 }
 
-// Orders still lives at the legacy /admin/requests path until Phase 5 renames
-// it for real — pointing here now keeps the link functional instead of 404ing.
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Operations',
     items: [
       { href: '/admin',              label: 'Dashboard', icon: LayoutDashboard },
-      { href: '/admin/requests',     label: 'Orders',    icon: Bell,         badgeKey: 'orders' },
+      { href: '/admin/orders',       label: 'Orders',    icon: Bell,         badgeKey: 'orders' },
       { href: '/admin/inbound',      label: 'Inbound',   icon: Truck },
       { href: '/admin/totes',        label: 'Inventory', icon: Package },
       { href: '/admin/pick-lists',   label: 'Pick',      icon: ClipboardList },

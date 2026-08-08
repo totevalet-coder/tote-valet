@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Customer, RouteStop } from '@/types/database'
 import { ChevronLeft, Plus, X, Package, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
@@ -17,8 +17,15 @@ interface StopDraft {
   notes: string
 }
 
-export default function NewRoutePage() {
+interface PrefillStop {
+  customerId: string
+  toteIds: string[]
+  type: 'pickup' | 'delivery'
+}
+
+function NewRouteContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   // Route-level fields
@@ -44,6 +51,11 @@ export default function NewRoutePage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
+  // Orders' "Assign to New Route" hands off selected orders as a ?prefill=
+  // (or ?prefillKey= for large payloads) query param — applied once, after
+  // customers has loaded, so we can resolve each customer's name/address.
+  const prefilledRef = useRef(false)
+
   const load = useCallback(async () => {
     const { data: d } = await supabase.from('customers').select('*').eq('role', 'driver')
     const { data: c } = await supabase.from('customers').select('*').eq('role', 'customer').order('name')
@@ -62,6 +74,37 @@ export default function NewRoutePage() {
   }, [supabase])
 
   useEffect(() => { load() }, [load])
+
+  // Apply Orders' pre-fill exactly once, after customers is loaded.
+  useEffect(() => {
+    if (prefilledRef.current || customers.length === 0) return
+    const raw = searchParams.get('prefill')
+    const key = searchParams.get('prefillKey')
+    const payload = raw ? decodeURIComponent(raw) : (key ? sessionStorage.getItem(key) : null)
+    if (!payload) return
+    prefilledRef.current = true
+    if (key) sessionStorage.removeItem(key)
+
+    try {
+      const { stops: prefillStops } = JSON.parse(payload) as { stops: PrefillStop[] }
+      const drafts: StopDraft[] = prefillStops.map(ps => {
+        const cust = customers.find(c => c.id === ps.customerId)
+        return {
+          key: crypto.randomUUID(),
+          customerId: ps.customerId,
+          customerName: cust?.name ?? 'Unknown customer',
+          address: cust?.address ?? '',
+          type: ps.type,
+          toteInput: '',
+          toteIds: ps.toteIds,
+          notes: '',
+        }
+      })
+      setStops(prev => [...prev, ...drafts])
+    } catch {
+      // Malformed payload — ignore, leave the builder empty rather than crash
+    }
+  }, [customers, searchParams])
 
   const selectedCustomer = customers.find(c => c.id === stopCustomerId)
 
@@ -151,7 +194,7 @@ export default function NewRoutePage() {
   const canSave = driverId && stops.length > 0 && routeId.trim()
 
   return (
-    <div className="px-5 pt-6 pb-6 space-y-5">
+    <div className="p-6 space-y-5 max-w-2xl">
       <button onClick={() => router.push('/admin/routes')} className="flex items-center gap-2 text-gray-500 text-sm">
         <ChevronLeft className="w-4 h-4" /> Back to Routes
       </button>
@@ -393,5 +436,13 @@ export default function NewRoutePage() {
         {saving ? 'Creating Route…' : `Create Route ${routeId}`}
       </button>
     </div>
+  )
+}
+
+export default function NewRoutePage() {
+  return (
+    <Suspense fallback={<div className="p-6"><div className="h-32 bg-gray-200 rounded-2xl animate-pulse" /></div>}>
+      <NewRouteContent />
+    </Suspense>
   )
 }
