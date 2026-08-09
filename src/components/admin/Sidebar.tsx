@@ -7,7 +7,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Bell, Truck, Package, ClipboardList, Navigation,
-  AlertTriangle, Users, CreditCard, Settings, Warehouse,
+  AlertTriangle, Users, CreditCard, Settings, Warehouse, Shuffle,
 } from 'lucide-react'
 
 interface NavItem {
@@ -31,6 +31,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/inbound',      label: 'Inbound',   icon: Truck },
       { href: '/admin/totes',        label: 'Inventory', icon: Package },
       { href: '/admin/pick-lists',   label: 'Pick',      icon: ClipboardList },
+      { href: '/admin/sort',         label: 'Sort',      icon: Shuffle },
       { href: '/admin/routes',       label: 'Routes',    icon: Navigation },
       { href: '/admin/errors',       label: 'Errors',    icon: AlertTriangle, badgeKey: 'errors' },
     ],
