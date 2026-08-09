@@ -85,6 +85,15 @@ Dashboard, Customers, Staff, Routes, Totes, Requests, Monitor, Billing, Settings
 
 ---
 
+## Dates & "Today"
+
+**Never write `new Date().toISOString().split('T')[0]` (or any raw UTC slice) to mean "today."** It reads the UTC calendar date, which silently differs from the business's actual local date for ~4-5 hours every evening (roughly 8pm-midnight Eastern) — confirmed live 2026-08-08 as a real bug affecting ~24 call sites across 19 files (route creation defaults, every "Today" filter, Sort's/drivers' "does a route exist today" lookups, joined_date, etc. — see project memory for the full incident writeup).
+
+Use `src/lib/date.ts` instead, always:
+- `todayStr()` — today's date as YYYY-MM-DD in `America/New_York` (the business's actual timezone), regardless of the server's or viewing device's own timezone.
+- `localDateStrFromISO(iso)` — which business-local calendar day a stored timestamp falls on (for grouping/filtering by day).
+- `localDayBoundsUTC(dateStr)` — correct UTC start/end instants for a local calendar day, for filtering a `timestamptz` column (e.g. `pick_lists.generated_at`) by date.
+
 ## Data Model — Key ID Formats
 - Totes: `TV-XXXX` (pre-printed barcodes)
 - Seals: `SL-XXXX` (plastic security seals)
