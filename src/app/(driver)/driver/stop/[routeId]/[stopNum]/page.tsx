@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
 
-type ScanPhase = 'tote' | 'seal'
 type ToteVerifyState = 'pending' | 'verified' | 'mismatch_1' | 'error'
 
 interface ToteState {
@@ -43,11 +42,15 @@ export default function StopDetailPage() {
 
   // Scan workflow state
   const [scanning, setScanning] = useState(false)
-  const [scanPhase, setScanPhase] = useState<ScanPhase>('tote')
-  const [currentToteIdx, setCurrentToteIdx] = useState(0)
   const [toteStates, setToteStates] = useState<ToteState[]>([])
   const [scanError, setScanError] = useState('')
   const [scanBusy, setScanBusy] = useState(false)
+  // Free-order scanning for pickups/full-tote deliveries: the driver can
+  // scan any of this stop's totes in any order, not a fixed sequence. Set
+  // only while mid-seal-check for the specific tote just scanned (a tote
+  // with a seal must have that seal confirmed before it counts as
+  // verified) — null the rest of the time, when any tote ID is accepted.
+  const [pendingSealFor, setPendingSealFor] = useState<string | null>(null)
 
   // Generic-empty deliveries (expected_empty_count set at route-build time):
   // any empty tote satisfies any slot -- no fixed identity/order to match,
@@ -117,8 +120,7 @@ export default function StopDetailPage() {
 
   function startScanning() {
     setScanning(true)
-    setScanPhase('tote')
-    setCurrentToteIdx(0)
+    setPendingSealFor(null)
     setGenericVerifiedIds([])
   }
 
@@ -169,63 +171,65 @@ export default function StopDetailPage() {
       return
     }
 
-    const currentTote = toteStates[currentToteIdx]
+    // Mid seal-check: this scan must be that specific tote's seal, not a
+    // new tote ID — the driver is committed to resolving it before moving
+    // on to a different tote (same one-retry-then-flag behavior as
+    // before, just tied to whichever tote was scanned rather than a fixed
+    // position in the list).
+    if (pendingSealFor) {
+      const idx = toteStates.findIndex(t => t.toteId === pendingSealFor)
+      const tote = toteStates[idx]
+      if (val === tote.sealNumber) {
+        markVerified(idx)
+      } else if (tote.state === 'pending') {
+        // First mismatch — warn and let rescan
+        setToteStates(prev => prev.map((t, i) =>
+          i === idx ? { ...t, state: 'mismatch_1', scannedSeal: val } : t
+        ))
+        setScanError(`Seal mismatch! Expected ${tote.sealNumber}, got ${val}. Scan seal again to confirm.`)
+      } else {
+        // Second mismatch — flag as error
+        const newStates = toteStates.map((t, i) =>
+          i === idx ? { ...t, state: 'error' as ToteVerifyState, scannedSeal: val } : t
+        )
+        setToteStates(newStates)
+        void flagSealMismatch(tote.toteId, tote.sealNumber, val)
+        setScanError(`Seal mismatch confirmed. Tote flagged for admin review.`)
+        setPendingSealFor(null)
+        checkAllDone(newStates)
+      }
+      return
+    }
 
-    if (scanPhase === 'tote') {
-      if (val !== currentTote.toteId) {
-        setScanError(`Expected ${currentTote.toteId} — scanned ${val}. Try again.`)
-        return
-      }
-      // Tote matched — now scan seal if it has one
-      if (currentTote.sealNumber) {
-        setScanPhase('seal')
-      } else {
-        // No seal, mark verified and move on
-        markVerified(currentToteIdx)
-      }
+    // Free-order tote scan — accept any of this stop's still-pending
+    // totes, not just a positionally "next" one.
+    const idx = toteStates.findIndex(t => t.toteId === val && t.state === 'pending')
+    if (idx === -1) {
+      const already = toteStates.find(t => t.toteId === val && (t.state === 'verified' || t.state === 'error'))
+      setScanError(already ? `${val} already scanned.` : `${val} is not on this stop's tote list.`)
+      return
+    }
+
+    const tote = toteStates[idx]
+    if (tote.sealNumber) {
+      setPendingSealFor(val)
     } else {
-      // Seal phase
-      if (val === currentTote.sealNumber) {
-        markVerified(currentToteIdx)
-      } else {
-        if (currentTote.state === 'pending') {
-          // First mismatch — warn and let rescan
-          setToteStates(prev => prev.map((t, i) =>
-            i === currentToteIdx ? { ...t, state: 'mismatch_1', scannedSeal: val } : t
-          ))
-          setScanError(`Seal mismatch! Expected ${currentTote.sealNumber}, got ${val}. Scan seal again to confirm.`)
-        } else {
-          // Second mismatch — flag as error
-          const newStates = toteStates.map((t, i) =>
-            i === currentToteIdx ? { ...t, state: 'error' as ToteVerifyState, scannedSeal: val } : t
-          )
-          setToteStates(newStates)
-          void flagSealMismatch(currentTote.toteId, currentTote.sealNumber, val)
-          setScanError(`Seal mismatch confirmed. Tote flagged for admin review.`)
-          advanceToNextTote(newStates, currentToteIdx)
-        }
-      }
+      markVerified(idx)
     }
   }
 
   function markVerified(idx: number) {
     const newStates = toteStates.map((t, i) => i === idx ? { ...t, state: 'verified' as ToteVerifyState } : t)
     setToteStates(newStates)
-    advanceToNextTote(newStates, idx)
+    setPendingSealFor(null)
+    setScanError('')
+    checkAllDone(newStates)
   }
 
-  function advanceToNextTote(states: ToteState[], completedIdx: number) {
-    const next = completedIdx + 1
-    if (next < states.length) {
-      setCurrentToteIdx(next)
-      setScanPhase('tote')
-      setScanError('')
-    } else {
-      // All totes processed — check with fresh states
-      const allDone = states.every(t => t.state === 'verified' || t.state === 'error')
-      if (allDone) {
-        void completeStop(states)
-      }
+  function checkAllDone(states: ToteState[]) {
+    const allDone = states.every(t => t.state === 'verified' || t.state === 'error')
+    if (allDone) {
+      void completeStop(states)
     }
   }
 
@@ -389,7 +393,9 @@ export default function StopDetailPage() {
   const allVerified = isGenericEmptyStop
     ? !!stop && genericVerifiedIds.length >= stop.tote_ids.length
     : toteStates.length > 0 && toteStates.every(t => t.state === 'verified' || t.state === 'error')
-  const currentTote = toteStates[currentToteIdx]
+  const remainingTotes = toteStates.filter(t => t.state === 'pending' || t.state === 'mismatch_1')
+  const scannedTotes = toteStates.filter(t => t.state === 'verified' || t.state === 'error')
+  const pendingSealTote = pendingSealFor ? toteStates.find(t => t.toteId === pendingSealFor) : undefined
 
   // ─── Success Screen ───────────────────────────────────────────────────────
   if (showSuccess) {
@@ -486,11 +492,11 @@ export default function StopDetailPage() {
       </button>
 
       {/* Tote table */}
-      <section>
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-          Totes ({stop.tote_ids.length})
-        </h2>
-        {isGenericEmptyStop ? (
+      {isGenericEmptyStop ? (
+        <section>
+          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+            Totes ({stop.tote_ids.length})
+          </h2>
           <div className="space-y-2">
             {genericVerifiedIds.map(toteId => (
               <div key={toteId} className="card flex items-center gap-3 border-green-200 bg-green-50">
@@ -516,44 +522,73 @@ export default function StopDetailPage() {
               </div>
             ))}
           </div>
-        ) : (
-        <div className="space-y-2">
-          {toteStates.map((t) => (
-            <div key={t.toteId} className={`card flex items-center gap-3 ${
-              t.state === 'verified' ? 'border-green-200 bg-green-50' :
-              t.state === 'error' ? 'border-red-200 bg-red-50' : ''
-            }`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                t.state === 'verified' ? 'bg-green-100' :
-                t.state === 'error' ? 'bg-red-100' : 'bg-gray-100'
-              }`}>
-                {t.state === 'verified' && <CheckCircle2 className="w-4 h-4 text-green-600" />}
-                {t.state === 'error' && <AlertCircle className="w-4 h-4 text-red-600" />}
-                {(t.state === 'pending' || t.state === 'mismatch_1') && (
-                  <Package className="w-4 h-4 text-gray-400" />
-                )}
+        </section>
+      ) : (
+        <>
+          {/* Remaining — scan any of these, any order */}
+          <section>
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+              Remaining ({remainingTotes.length})
+            </h2>
+            {remainingTotes.length === 0 ? (
+              <p className="text-sm text-gray-400 italic">All totes scanned.</p>
+            ) : (
+              <div className="space-y-2">
+                {remainingTotes.map((t) => (
+                  <div key={t.toteId} className={`card flex items-center gap-3 ${
+                    t.toteId === pendingSealFor ? 'border-purple-300 bg-purple-50' : ''
+                  }`}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-100">
+                      <Package className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-bold text-sm font-mono text-brand-navy">{t.toteId}</p>
+                      {t.sealNumber && <p className="text-xs text-gray-400">Seal: {t.sealNumber}</p>}
+                    </div>
+                    <span className={`status-pill text-xs ${
+                      t.state === 'mismatch_1' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {t.toteId === pendingSealFor ? 'Scan Seal' : t.state === 'mismatch_1' ? 'Rescan' : 'Pending'}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <div className="flex-1">
-                <p className="font-bold text-sm font-mono text-brand-navy">{t.toteId}</p>
-                {t.sealNumber && (
-                  <p className="text-xs text-gray-400">Seal: {t.sealNumber}</p>
-                )}
+            )}
+          </section>
+
+          {/* Scanned — moved down and out of the way once done */}
+          {scannedTotes.length > 0 && (
+            <section>
+              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                Scanned ({scannedTotes.length})
+              </h2>
+              <div className="space-y-2">
+                {scannedTotes.map((t) => (
+                  <div key={t.toteId} className={`card flex items-center gap-3 opacity-70 ${
+                    t.state === 'verified' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+                  }`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      t.state === 'verified' ? 'bg-green-100' : 'bg-red-100'
+                    }`}>
+                      {t.state === 'verified'
+                        ? <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        : <AlertCircle className="w-4 h-4 text-red-600" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-bold text-sm font-mono text-brand-navy">{t.toteId}</p>
+                    </div>
+                    <span className={`status-pill text-xs ${
+                      t.state === 'verified' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                    }`}>
+                      {t.state === 'verified' ? 'Verified' : 'Error'}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <span className={`status-pill text-xs ${
-                t.state === 'verified' ? 'bg-green-100 text-green-700' :
-                t.state === 'error' ? 'bg-red-100 text-red-700' :
-                t.state === 'mismatch_1' ? 'bg-yellow-100 text-yellow-700' :
-                'bg-gray-100 text-gray-500'
-              }`}>
-                {t.state === 'verified' ? 'Verified' :
-                 t.state === 'error' ? 'Error' :
-                 t.state === 'mismatch_1' ? 'Rescan' : 'Pending'}
-              </span>
-            </div>
-          ))}
-        </div>
-        )}
-      </section>
+            </section>
+          )}
+        </>
+      )}
 
       {/* Scanning workflow — generic empty totes (any barcode, any order) */}
       {scanning && isGenericEmptyStop && !allVerified && (
@@ -580,28 +615,37 @@ export default function StopDetailPage() {
         </div>
       )}
 
-      {/* Scanning workflow — specific pre-assigned totes (pickups, full-tote deliveries) */}
-      {scanning && !isGenericEmptyStop && currentTote && !allVerified && (
+      {/* Scanning workflow — specific pre-assigned totes (pickups, full-tote
+          deliveries): scan any of them, any order — only committed to a
+          fixed target while resolving one tote's seal. */}
+      {scanning && !isGenericEmptyStop && !allVerified && (
         <div className="card border-2 border-brand-blue/30 bg-brand-blue/5 space-y-4">
-          {/* Phase label — large and obvious */}
           <div className="text-center pt-2">
-            <p className={`font-black text-3xl tracking-tight ${scanPhase === 'tote' ? 'text-brand-blue' : 'text-purple-600'}`}>
-              {scanPhase === 'tote' ? 'Scan Tote Barcode' : 'Scan Security Seal'}
+            <p className={`font-black text-3xl tracking-tight ${pendingSealFor ? 'text-purple-600' : 'text-brand-blue'}`}>
+              {pendingSealFor ? 'Scan Security Seal' : 'Scan Any Tote'}
             </p>
             <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mt-1">
-              {currentToteIdx + 1} of {toteStates.length}
+              {remainingTotes.length} of {toteStates.length} left
             </p>
           </div>
 
-          {/* Expecting ID — very prominent */}
-          <div className={`rounded-2xl px-5 py-4 text-center ${scanPhase === 'tote' ? 'bg-brand-navy' : 'bg-purple-700'}`}>
-            <p className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
-              {scanPhase === 'tote' ? 'Expecting Tote ID' : 'Expecting Seal Number'}
-            </p>
-            <p className="text-white font-black text-2xl font-mono tracking-tight">
-              {scanPhase === 'tote' ? currentTote.toteId : (currentTote.sealNumber ?? 'none')}
-            </p>
-          </div>
+          {pendingSealFor && pendingSealTote ? (
+            <div className="rounded-2xl px-5 py-4 text-center bg-purple-700">
+              <p className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">
+                Tote {pendingSealTote.toteId} — Expecting Seal
+              </p>
+              <p className="text-white font-black text-2xl font-mono tracking-tight">
+                {pendingSealTote.sealNumber ?? 'none'}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl px-5 py-4 text-center bg-brand-navy">
+              <p className="text-white/60 text-xs font-medium uppercase tracking-wider mb-1">Remaining</p>
+              <p className="text-white font-black text-2xl tracking-tight">
+                {remainingTotes.length} tote{remainingTotes.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          )}
 
           {scanError && (
             <div className="bg-yellow-50 border border-yellow-300 rounded-xl px-3 py-3 flex items-start gap-2">
@@ -612,7 +656,7 @@ export default function StopDetailPage() {
 
           <BarcodeScanInput
             onScan={handleScan}
-            placeholder={scanPhase === 'tote' ? 'Or enter tote ID…' : 'Or enter seal number…'}
+            placeholder={pendingSealFor ? 'Or enter seal number…' : 'Or enter tote ID…'}
             large
             autoFocusManual
           />
