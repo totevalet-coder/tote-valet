@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
 import { todayStr as businessTodayStr } from '@/lib/date'
+import { listWarehouses } from '@/lib/warehouses'
+import type { Warehouse } from '@/types/database'
 
 interface EnrichedRoute extends Route {
   driverName: string
@@ -36,11 +38,21 @@ export default function AdminRoutesPage() {
   const [showAll, setShowAll] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
+  // Multi-warehouse readiness — every route carries a real warehouse_id
+  // now. '' means "all warehouses". See CLAUDE.md's Warehouses & Locations
+  // section.
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouseFilter, setWarehouseFilter] = useState('')
+
+  useEffect(() => { listWarehouses(supabase).then(setWarehouses) }, [supabase])
+  const warehouseCode = (id: string | null) => warehouses.find(w => w.id === id)?.code ?? '—'
+
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); else setRefreshing(true)
 
     let q = supabase.from('routes').select('*').order('created_at', { ascending: false })
     q = showAll ? q.limit(50) : q.eq('date', selectedDate)
+    if (warehouseFilter) q = q.eq('warehouse_id', warehouseFilter)
 
     const { data: routeData } = await q
     if (!routeData) { setLoading(false); setRefreshing(false); return }
@@ -70,7 +82,7 @@ export default function AdminRoutesPage() {
     setRoutes(enriched)
     setLoading(false)
     setRefreshing(false)
-  }, [supabase, showAll, selectedDate])
+  }, [supabase, showAll, selectedDate, warehouseFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -98,6 +110,16 @@ export default function AdminRoutesPage() {
       <div className="flex items-center justify-between">
         <h1 className="font-black text-2xl text-brand-navy">Routes</h1>
         <div className="flex items-center gap-2">
+          {warehouses.length > 1 && (
+            <select
+              value={warehouseFilter}
+              onChange={e => setWarehouseFilter(e.target.value)}
+              className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600"
+            >
+              <option value="">All Warehouses</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.code}</option>)}
+            </select>
+          )}
           <input
             type="date"
             value={selectedDate}
@@ -191,7 +213,10 @@ export default function AdminRoutesPage() {
                       </td>
                       <td className="px-4 py-3">
                         <p className="text-gray-700 font-medium">{r.driverName}</p>
-                        <p className="text-xs text-gray-400">{r.driverEmail} · {r.date}</p>
+                        <p className="text-xs text-gray-400">
+                          {r.driverEmail} · {r.date}
+                          {warehouses.length > 1 && <> · {warehouseCode(r.warehouse_id)}</>}
+                        </p>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`status-pill text-[10px] ${STATUS_STYLES[r.status] ?? 'bg-gray-100 text-gray-500'}`}>

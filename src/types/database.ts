@@ -323,6 +323,7 @@ export type Database = {
           generated_by: string
           id: string
           region_id: string
+          warehouse_id: string
           status: Database["public"]["Enums"]["pick_list_status"]
           updated_at: string
         }
@@ -335,6 +336,7 @@ export type Database = {
           generated_by: string
           id: string
           region_id?: string
+          warehouse_id?: string
           status?: Database["public"]["Enums"]["pick_list_status"]
           updated_at?: string
         }
@@ -347,6 +349,7 @@ export type Database = {
           generated_by?: string
           id?: string
           region_id?: string
+          warehouse_id?: string
           status?: Database["public"]["Enums"]["pick_list_status"]
           updated_at?: string
         }
@@ -356,6 +359,13 @@ export type Database = {
             columns: ["region_id"]
             isOneToOne: false
             referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pick_lists_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
             referencedColumns: ["id"]
           },
           {
@@ -384,6 +394,7 @@ export type Database = {
           force_complete_count: number
           id: string
           region_id: string
+          warehouse_id: string
           status: Database["public"]["Enums"]["route_status"]
           stops: RouteStop[]
           updated_at: string
@@ -397,6 +408,7 @@ export type Database = {
           force_complete_count?: number
           id: string
           region_id?: string
+          warehouse_id?: string
           status?: Database["public"]["Enums"]["route_status"]
           stops?: RouteStop[]
           updated_at?: string
@@ -410,6 +422,7 @@ export type Database = {
           force_complete_count?: number
           id?: string
           region_id?: string
+          warehouse_id?: string
           status?: Database["public"]["Enums"]["route_status"]
           stops?: RouteStop[]
           updated_at?: string
@@ -420,6 +433,13 @@ export type Database = {
             columns: ["region_id"]
             isOneToOne: false
             referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "routes_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
             referencedColumns: ["id"]
           },
           {
@@ -484,6 +504,7 @@ export type Database = {
       totes: {
         Row: {
           bin_location: string | null
+          current_location_id: string | null
           created_at: string
           customer_id: string
           empty_since: string | null
@@ -501,6 +522,7 @@ export type Database = {
         }
         Insert: {
           bin_location?: string | null
+          current_location_id?: string | null
           created_at?: string
           customer_id: string
           empty_since?: string | null
@@ -518,6 +540,7 @@ export type Database = {
         }
         Update: {
           bin_location?: string | null
+          current_location_id?: string | null
           created_at?: string
           customer_id?: string
           empty_since?: string | null
@@ -548,6 +571,13 @@ export type Database = {
             referencedRelation: "regions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "totes_current_location_id_fkey"
+            columns: ["current_location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       regions: {
@@ -571,6 +601,76 @@ export type Database = {
         }
         Relationships: []
       }
+      warehouses: {
+        Row: {
+          id: string
+          region_id: string
+          name: string
+          code: string
+          address: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          region_id: string
+          name: string
+          code: string
+          address?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          region_id?: string
+          name?: string
+          code?: string
+          address?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warehouses_region_id_fkey"
+            columns: ["region_id"]
+            isOneToOne: false
+            referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      locations: {
+        Row: {
+          id: string
+          warehouse_id: string
+          type: "drop_zone" | "staging_zone"
+          code: string
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          warehouse_id: string
+          type: "drop_zone" | "staging_zone"
+          code: string
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          warehouse_id?: string
+          type?: "drop_zone" | "staging_zone"
+          code?: string
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "locations_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -585,6 +685,7 @@ export type Database = {
         | "force_complete"
         | "partial_delivery"
         | "unexpected_tote"
+      location_type: "drop_zone" | "staging_zone"
       pick_list_status: "ready" | "in_progress" | "complete"
       route_status: "planned" | "in_progress" | "complete" | "returning"
       tote_status:
@@ -823,3 +924,6 @@ export type Route = Database['public']['Tables']['routes']['Row']
 export type PickList = Database['public']['Tables']['pick_lists']['Row']
 export type Region = Database['public']['Tables']['regions']['Row']
 export type DashboardThresholds = Database['public']['Tables']['dashboard_thresholds']['Row']
+export type Warehouse = Database['public']['Tables']['warehouses']['Row']
+export type Location = Database['public']['Tables']['locations']['Row']
+export type LocationType = Location['type']

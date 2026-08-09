@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { todayStr } from './date'
+import { getDefaultWarehouseId } from './warehouses'
 
 export type GeneratePickListResult =
   | { ok: true; id: string }
@@ -10,8 +11,14 @@ export type GeneratePickListResult =
  * aware — this is the existing "location-based" pick mode), and inserts a
  * new pick_lists row. Shared between the Dashboard quick action and the
  * Pick page's "+ Generate Pick List" button so the two don't drift.
+ *
+ * `warehouseId` defaults to the single seeded warehouse so existing callers
+ * work unchanged. Known limitation: since `bins` isn't warehouse-scoped yet
+ * (deliberately deferred — see CLAUDE.md's Warehouses & Locations section),
+ * this only tags the resulting pick_lists row with a warehouse; it doesn't
+ * yet filter which bins/totes get pulled to just that warehouse's own bins.
  */
-export async function generatePickList(supabase: SupabaseClient): Promise<GeneratePickListResult> {
+export async function generatePickList(supabase: SupabaseClient, warehouseId?: string): Promise<GeneratePickListResult> {
   const { data: totes } = await supabase
     .from('totes').select('id, bin_location, customer_id').eq('status', 'pending_pick')
 
@@ -56,6 +63,8 @@ export async function generatePickList(supabase: SupabaseClient): Promise<Genera
   const { data: me } = await supabase.from('customers').select('id').eq('auth_id', userData.user.id).single()
   if (!me) return { ok: false, error: 'Could not find your customer record.' }
 
+  const resolvedWarehouseId = warehouseId ?? await getDefaultWarehouseId(supabase)
+
   const { error } = await supabase.from('pick_lists').insert({
     id,
     generated_by: me.id,
@@ -64,6 +73,7 @@ export async function generatePickList(supabase: SupabaseClient): Promise<Genera
     assigned_to: null,
     bins,
     completed_at: null,
+    ...(resolvedWarehouseId ? { warehouse_id: resolvedWarehouseId } : {}),
   })
 
   if (error) return { ok: false, error: error.message }

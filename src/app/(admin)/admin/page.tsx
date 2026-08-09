@@ -10,6 +10,8 @@ import {
 import StatCard from '@/components/admin/StatCard'
 import PaceIndicator from '@/components/admin/PaceIndicator'
 import { todayStr, BUSINESS_TIMEZONE } from '@/lib/date'
+import { listWarehouses } from '@/lib/warehouses'
+import type { Warehouse } from '@/types/database'
 
 interface DashboardStats {
   // Inbound Today
@@ -69,6 +71,17 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Multi-warehouse readiness — Unstowed and In Drop Zone are the only
+  // tiles derivable by warehouse today (via totes.current_location_id ->
+  // locations.warehouse_id, populated by the driver-return and pick-list-
+  // completion flows). Every other tile stays combined-only until bins
+  // themselves are warehouse-scoped (deliberately deferred — see
+  // CLAUDE.md's Warehouses & Locations section). '' means "all warehouses".
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouseFilter, setWarehouseFilter] = useState('')
+
+  useEffect(() => { listWarehouses(supabase).then(setWarehouses) }, [supabase])
+
   const load = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser()
     if (!userData.user) { router.push('/login'); return }
@@ -77,13 +90,14 @@ export default function AdminDashboard() {
 
     const today = todayStr()
 
-    const [totesRes, binsRes, pickListsRes, driversRes, todaysRoutesRes, thresholdsRes] = await Promise.all([
-      supabase.from('totes').select('id, status, items'),
+    const [totesRes, binsRes, pickListsRes, driversRes, todaysRoutesRes, thresholdsRes, locationsRes] = await Promise.all([
+      supabase.from('totes').select('id, status, items, current_location_id'),
       supabase.from('bins').select('capacity, current_count'),
       supabase.from('pick_lists').select('id, bins').neq('status', 'complete'),
       supabase.from('customers').select('id', { count: 'exact', head: true }).eq('role', 'driver').eq('status', 'active'),
       supabase.from('routes').select('id, stops').eq('date', today),
       supabase.from('dashboard_thresholds').select('*').eq('id', 1).maybeSingle(),
+      supabase.from('locations').select('id, warehouse_id'),
     ])
     const thresholds = thresholdsRes.data as DashboardThresholds | null
 
@@ -96,9 +110,22 @@ export default function AdminDashboard() {
     const binUsed = bins.reduce((s, b) => s + b.current_count, 0)
     const binSpacesAvailable = binTotalCapacity - binUsed
 
+    // Which locations belong to the currently-filtered warehouse (if any) —
+    // used below to scope Unstowed/In Drop Zone by warehouse via each
+    // tote's current_location_id. No filter = every location counts.
+    const filteredLocationIds = warehouseFilter
+      ? new Set((locationsRes.data ?? []).filter(l => l.warehouse_id === warehouseFilter).map(l => l.id))
+      : null
+
     // Unstowed / In Drop Zone / Staged & Ready
-    const unstowed = totes.filter(t => t.status === 'ready_to_stow').length
-    const inDropZone = totes.filter(t => t.status === 'picked').length
+    const matchesWarehouseFilter = (t: { current_location_id: string | null }) =>
+      !filteredLocationIds || (t.current_location_id != null && filteredLocationIds.has(t.current_location_id))
+    const unstowed = totes.filter(t => t.status === 'ready_to_stow' && matchesWarehouseFilter(t)).length
+    const inDropZone = totes.filter(t => t.status === 'picked' && matchesWarehouseFilter(t)).length
+    // Staged & Ready isn't derivable by warehouse yet -- Sort's zone
+    // logic uses the route id as its label, not a locations row (left
+    // untouched deliberately, see CLAUDE.md) -- so this stays combined
+    // regardless of the filter.
     const stagedReady = totes.filter(t => t.status === 'returned_to_station').length
 
     // Open Pick Lists
@@ -185,7 +212,7 @@ export default function AdminDashboard() {
       thresholds,
     })
     setLoading(false)
-  }, [supabase, router])
+  }, [supabase, router, warehouseFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -216,9 +243,22 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px]">
-      <div>
-        <p className="text-xs text-gray-400 font-medium">{today}</p>
-        <h1 className="font-black text-2xl text-brand-navy">Dashboard</h1>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-xs text-gray-400 font-medium">{today}</p>
+          <h1 className="font-black text-2xl text-brand-navy">Dashboard</h1>
+        </div>
+        {warehouses.length > 1 && (
+          <select
+            value={warehouseFilter}
+            onChange={e => setWarehouseFilter(e.target.value)}
+            className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600"
+            title="Only narrows Unstowed / In Drop Zone -- other tiles stay combined until bins are warehouse-scoped"
+          >
+            <option value="">All Warehouses (combined)</option>
+            {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} only</option>)}
+          </select>
+        )}
       </div>
 
       {/* Top summary row */}

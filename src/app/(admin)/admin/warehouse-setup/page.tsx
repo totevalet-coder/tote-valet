@@ -2,14 +2,24 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Rows3, Boxes, Gauge, Plus, GripHorizontal, AlertTriangle, CheckCircle2, Map as MapIcon } from 'lucide-react'
+import {
+  Rows3, Boxes, Gauge, Plus, GripHorizontal, AlertTriangle, CheckCircle2,
+  Map as MapIcon, Warehouse as WarehouseIcon, PackageOpen, ArrowUpDown, X,
+} from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
+import type { Warehouse, Location, LocationType } from '@/types/database'
+import { listWarehouses } from '@/lib/warehouses'
 
 interface BinInfo {
   id: string
   row: string
   capacity: number
   current_count: number
+}
+
+const ZONE_TYPE_META: Record<LocationType, { label: string; icon: typeof PackageOpen; placeholder: string }> = {
+  drop_zone:    { label: 'Drop Zones',    icon: PackageOpen,  placeholder: 'e.g. Dock, Dock2, InboundDock' },
+  staging_zone: { label: 'Staging Zones', icon: ArrowUpDown,  placeholder: 'e.g. 01, 02' },
 }
 
 // How many pixels of drag == one more bin previewed. Tuned for a normal
@@ -42,6 +52,20 @@ export default function WarehouseSetupPage() {
   const [loading, setLoading] = useState(true)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
+  // Multi-warehouse readiness — see CLAUDE.md's "Warehouses & Locations"
+  // section. Bins themselves aren't warehouse-scoped yet (deliberately
+  // deferred), so this selector only affects the Drop Zones/Staging Zones
+  // section below. Defaults to WH1 — a no-op today since it's the only
+  // warehouse that exists, but wired now so a second one doesn't need a
+  // separate UI pass later.
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState('')
+  const [locations, setLocations] = useState<Location[]>([])
+  const [zoneCode, setZoneCode] = useState('')
+  const [zoneType, setZoneType] = useState<LocationType>('drop_zone')
+  const [zoneError, setZoneError] = useState('')
+  const [creatingZone, setCreatingZone] = useState(false)
+
   // New Row form
   const [rowLetter, setRowLetter] = useState('')
   const [startingNum, setStartingNum] = useState('1')
@@ -63,6 +87,50 @@ export default function WarehouseSetupPage() {
   }, [supabase])
 
   useEffect(() => { load() }, [load])
+
+  // Warehouses — loaded once. Falls back to an empty list gracefully if the
+  // multi-warehouse migration hasn't been run yet (see CLAUDE.md), rather
+  // than erroring the whole page.
+  useEffect(() => {
+    listWarehouses(supabase).then(list => {
+      setWarehouses(list)
+      if (list.length > 0) setSelectedWarehouseId(prev => prev || list[0].id)
+    })
+  }, [supabase])
+
+  const loadLocations = useCallback(async () => {
+    if (!selectedWarehouseId) { setLocations([]); return }
+    const { data } = await supabase.from('locations').select('*').eq('warehouse_id', selectedWarehouseId).order('code')
+    setLocations((data ?? []) as Location[])
+  }, [supabase, selectedWarehouseId])
+
+  useEffect(() => { loadLocations() }, [loadLocations])
+
+  async function createZone() {
+    setZoneError('')
+    const code = zoneCode.trim()
+    if (!code) { setZoneError('Enter a name for this zone.'); return }
+    if (!selectedWarehouseId) { setZoneError('Select a warehouse first.'); return }
+
+    setCreatingZone(true)
+    const { error } = await supabase.from('locations').insert({
+      warehouse_id: selectedWarehouseId,
+      type: zoneType,
+      code,
+    })
+    setCreatingZone(false)
+    if (error) { setZoneError(error.message); return }
+
+    setZoneCode('')
+    setSaveMsg(`Added ${ZONE_TYPE_META[zoneType].label.replace(/s$/, '')} "${code}"`)
+    setTimeout(() => setSaveMsg(null), 3000)
+    loadLocations()
+  }
+
+  async function deleteZone(id: string) {
+    await supabase.from('locations').delete().eq('id', id)
+    loadLocations()
+  }
 
   const rows = [...new Set(bins.map(b => b.row))].sort()
   const defaultCapacity = mode(bins.map(b => b.capacity))
@@ -149,7 +217,23 @@ export default function WarehouseSetupPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px]">
-      <h1 className="font-black text-2xl text-brand-navy">Warehouse Setup</h1>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="font-black text-2xl text-brand-navy">Warehouse Setup</h1>
+        {warehouses.length > 0 && (
+          <div className="flex items-center gap-2">
+            <WarehouseIcon className="w-4 h-4 text-gray-400" />
+            <select
+              value={selectedWarehouseId}
+              onChange={e => setSelectedWarehouseId(e.target.value)}
+              className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600"
+            >
+              {warehouses.map(w => (
+                <option key={w.id} value={w.id}>{w.code} — {w.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-3 gap-4 max-w-2xl">
         <StatCard label="Rows Configured" value={rows.length} icon={Rows3} />
@@ -299,6 +383,94 @@ export default function WarehouseSetupPage() {
         >
           <MapIcon className="w-4 h-4" /> Warehouse Layout Map (Coming Soon)
         </button>
+      </section>
+
+      {/* Drop Zones & Staging Zones */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="font-bold text-brand-navy">Drop Zones &amp; Staging Zones</h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Not physically sized like bins — just named spots on the floor where totes wait, scoped to{' '}
+            {warehouses.find(w => w.id === selectedWarehouseId)?.code ?? 'this warehouse'}. Unlimited per warehouse.
+          </p>
+        </div>
+
+        {warehouses.length === 0 ? (
+          <p className="text-sm text-gray-400 italic max-w-2xl">
+            No warehouses found — the multi-warehouse migration may not have been run yet.
+          </p>
+        ) : (
+          <>
+            {/* Add zone form */}
+            <div className="card space-y-3 max-w-2xl">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">New Zone</p>
+              <div className="flex flex-wrap gap-3 items-end">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Type</label>
+                  <select
+                    value={zoneType}
+                    onChange={e => { setZoneType(e.target.value as LocationType); setZoneError('') }}
+                    className="border border-gray-300 rounded-lg px-2 py-2 text-sm"
+                  >
+                    <option value="drop_zone">Drop Zone</option>
+                    <option value="staging_zone">Staging Zone</option>
+                  </select>
+                </div>
+                <div className="flex-1 min-w-[160px]">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    Name <span className="text-gray-300 font-normal">({warehouses.find(w => w.id === selectedWarehouseId)?.code ?? 'WH'}-{zoneType === 'drop_zone' ? 'DZ' : 'STG'}-…)</span>
+                  </label>
+                  <input
+                    type="text" value={zoneCode} onChange={e => { setZoneCode(e.target.value); setZoneError('') }}
+                    placeholder={ZONE_TYPE_META[zoneType].placeholder}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <button
+                  onClick={createZone} disabled={creatingZone}
+                  className="flex items-center gap-1.5 bg-brand-navy text-white rounded-xl px-4 py-2.5 text-sm font-bold hover:bg-blue-900 transition-colors disabled:opacity-60"
+                >
+                  <Plus className="w-4 h-4" /> {creatingZone ? 'Adding…' : 'Add Zone'}
+                </button>
+              </div>
+              {zoneError && (
+                <div className="flex items-start gap-2 text-xs text-red-600">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" /> {zoneError}
+                </div>
+              )}
+            </div>
+
+            {/* Existing zones, grouped by type */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+              {(Object.keys(ZONE_TYPE_META) as LocationType[]).map(type => {
+                const meta = ZONE_TYPE_META[type]
+                const Icon = meta.icon
+                const zones = locations.filter(l => l.type === type)
+                return (
+                  <div key={type} className="card space-y-2">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Icon className="w-3.5 h-3.5" /> {meta.label} ({zones.length})
+                    </p>
+                    {zones.length === 0 ? (
+                      <p className="text-xs text-gray-300 italic">None yet</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {zones.map(z => (
+                          <div key={z.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                            <span className="text-sm font-mono font-semibold text-brand-navy flex-1">{z.code}</span>
+                            <button onClick={() => deleteZone(z.id)} title="Remove zone">
+                              <X className="w-3.5 h-3.5 text-gray-300 hover:text-red-500" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
       </section>
     </div>
   )

@@ -85,6 +85,71 @@ as $$
 $$;
 
 -- ============================================================
+-- SECTION 4.0.1 — WAREHOUSES TABLE
+-- One row per physical building within a region. Lehigh Valley
+-- today operates from one (WH1); multi-warehouse readiness added
+-- 2026-08-09 ahead of a second building actually going live.
+-- `code` (e.g. "WH1") is the prefix printed on physical bin/zone
+-- labels — smaller than the rest of the label text, but part of
+-- the real scannable ID. See Section 4.0.2 (locations) for how
+-- drop zones/staging zones use it; `bins` is NOT warehouse-scoped
+-- yet (deferred — see schema.sql migrations section for why).
+-- ============================================================
+
+create table warehouses (
+  id          uuid primary key default uuid_generate_v4(),
+  region_id   uuid not null references regions(id),
+  name        text not null,               -- e.g. "Coopersburg Main"
+  code        text not null unique,        -- e.g. "WH1" — physical-label prefix
+  address     text,
+  created_at  timestamptz not null default now()
+);
+
+insert into warehouses (region_id, name, code)
+  select id, 'Coopersburg Main', 'WH1' from regions where slug = 'lehigh-valley';
+
+create index idx_warehouses_region_id on warehouses(region_id);
+
+-- Returns the current default warehouse's id. Used as the column
+-- default below so existing insert code doesn't need to change
+-- while there's only one warehouse.
+create or replace function get_default_warehouse_id()
+returns uuid
+language sql
+stable
+as $$
+  select id from warehouses where code = 'WH1' limit 1;
+$$;
+
+-- ============================================================
+-- SECTION 4.0.2 — LOCATIONS TABLE
+-- Warehouse-scoped drop zones and staging zones — informal floor
+-- spots (not physically sized, unlike bins), unlimited per
+-- warehouse, user-named (e.g. "WH1-DZ-Dock", "WH1-STG-02"). A
+-- tote references whichever location currently holds it via
+-- totes.current_location_id (Section 4.2) — never its own
+-- warehouse_id — so its warehouse is always derived from its
+-- current parent location, not stored redundantly. `bins` is
+-- deliberately NOT folded into this table yet (see migrations
+-- section for the additive-vs-unify tradeoff).
+-- ============================================================
+
+create type location_type as enum ('drop_zone', 'staging_zone');
+
+create table locations (
+  id            uuid primary key default uuid_generate_v4(),
+  warehouse_id  uuid not null references warehouses(id),
+  type          location_type not null,
+  code          text not null,             -- e.g. WH1-DZ-Dock, WH1-STG-02
+  notes         text,
+  created_at    timestamptz not null default now(),
+  unique (warehouse_id, code)
+);
+
+create index idx_locations_warehouse_id on locations(warehouse_id);
+create index idx_locations_type on locations(type);
+
+-- ============================================================
 -- SECTION 4.1 — CUSTOMERS TABLE
 -- ============================================================
 
@@ -126,6 +191,12 @@ create table totes (
   photo_url       text,                           -- Supabase storage URL of sealed tote photo
   status          tote_status not null default 'empty_at_customer',
   bin_location    text,                           -- e.g. A-12, null if not stored
+  -- Set only while a tote sits in a drop zone or staging zone (Section
+  -- 4.0.2) — null while in a real bin (bin_location, above), with a
+  -- customer, or in transit. Deliberately NOT a warehouse_id: the tote's
+  -- warehouse is always derived by joining through here, never stored
+  -- redundantly, so it can't go stale as totes move between warehouses.
+  current_location_id uuid references locations(id) on delete set null,
   last_scan_date  timestamptz,
   items           jsonb default '[]'::jsonb,      -- Array of { label, photo_url?, ai_generated? }
   region_id       uuid not null default get_default_region_id() references regions(id),
@@ -138,6 +209,7 @@ create index idx_totes_status on totes(status);
 create index idx_totes_bin_location on totes(bin_location);
 create index idx_totes_seal_number on totes(seal_number);
 create index idx_totes_region_id on totes(region_id);
+create index idx_totes_current_location_id on totes(current_location_id);
 
 -- ============================================================
 -- SECTION 4.3 — BINS TABLE
@@ -171,6 +243,11 @@ create table routes (
   force_complete_count  int not null default 0,    -- For admin reporting
   error_count           int not null default 0,    -- Total errors on this route
   region_id             uuid not null default get_default_region_id() references regions(id),
+  -- Which warehouse this route dispatches from. Real column now, even
+  -- though dispatch is single-hub today — cross-warehouse route
+  -- consolidation (combine a WH1 + WH2 + WH3 route into one optimized
+  -- run) is a real future need, deliberately not designed/built yet.
+  warehouse_id          uuid not null default get_default_warehouse_id() references warehouses(id),
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()
 );
@@ -179,6 +256,7 @@ create index idx_routes_driver_id on routes(driver_id);
 create index idx_routes_date on routes(date);
 create index idx_routes_status on routes(status);
 create index idx_routes_region_id on routes(region_id);
+create index idx_routes_warehouse_id on routes(warehouse_id);
 
 -- ============================================================
 -- SECTION 4.5 — PICK LISTS TABLE
@@ -195,6 +273,9 @@ create table pick_lists (
   -- Each entry: { bin_id, totes: [{ tote_id, customer_name, status: 'pending'|'picked' }] }
   completed_at    timestamptz,
   region_id       uuid not null default get_default_region_id() references regions(id),
+  -- Which warehouse this pick list's bins belong to. A pick list is
+  -- inherently single-warehouse (a bin-order walk through one building).
+  warehouse_id    uuid not null default get_default_warehouse_id() references warehouses(id),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -202,6 +283,7 @@ create table pick_lists (
 create index idx_pick_lists_status on pick_lists(status);
 create index idx_pick_lists_assigned_to on pick_lists(assigned_to);
 create index idx_pick_lists_region_id on pick_lists(region_id);
+create index idx_pick_lists_warehouse_id on pick_lists(warehouse_id);
 
 -- ============================================================
 -- SECTION 4.6 — ERRORS TABLE
@@ -322,6 +404,8 @@ create trigger totes_sync_bin_count after update on totes
 -- ============================================================
 
 alter table regions enable row level security;
+alter table warehouses enable row level security;
+alter table locations enable row level security;
 alter table customers enable row level security;
 alter table totes enable row level security;
 alter table bins enable row level security;
@@ -349,6 +433,25 @@ create policy "regions_admin_write" on regions
 
 create policy "regions_admin_update" on regions
   for update using (get_my_role() = 'admin');
+
+-- Warehouses: any authenticated user can read the list (needed for
+-- warehouse pickers); only admins can add/edit. No delete policy —
+-- same gap regions already has today, kept deliberately consistent.
+create policy "warehouses_read_all" on warehouses
+  for select using (auth.uid() is not null);
+
+create policy "warehouses_admin_write" on warehouses
+  for insert with check (get_my_role() = 'admin');
+
+create policy "warehouses_admin_update" on warehouses
+  for update using (get_my_role() = 'admin');
+
+-- Locations (drop zones/staging zones): staff read; warehouse/admin write
+create policy "locations_staff_read" on locations
+  for select using (get_my_role() in ('driver','warehouse','sorter','admin'));
+
+create policy "locations_warehouse_write" on locations
+  for all using (get_my_role() in ('warehouse','admin'));
 
 -- Customers: self read/insert/update + admin all
 create policy "customers_self_read" on customers
@@ -561,6 +664,112 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 --   FOR ALL USING (get_my_role() = 'admin');
 --
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON public.dashboard_thresholds TO authenticated;
+
+-- ⏳ PENDING — warehouses + locations tables, multi-warehouse readiness
+-- (Sections 4.0.1/4.0.2 above), plus totes.current_location_id,
+-- routes.warehouse_id, pick_lists.warehouse_id. Added 2026-08-09 ahead of
+-- a second physical warehouse going live — user's explicit design
+-- decisions: bins stay untouched this phase (existing bin IDs don't need
+-- relabeling yet — see the "Phase 4 (future)" note at the bottom of this
+-- block); totes get NO warehouse_id of their own, only
+-- current_location_id, so a tote's warehouse is always derived from
+-- whatever location currently holds it, never stored redundantly.
+--
+-- Run this whole block in the Supabase SQL editor, in order (each step
+-- depends on the one before it — same nullable-then-backfill-then-tighten
+-- discipline as the regions migration above). Then flip this to ✅ Done.
+--
+-- CREATE TABLE IF NOT EXISTS warehouses (
+--   id          uuid primary key default uuid_generate_v4(),
+--   region_id   uuid not null references regions(id),
+--   name        text not null,
+--   code        text not null unique,
+--   address     text,
+--   created_at  timestamptz not null default now()
+-- );
+--
+-- INSERT INTO warehouses (region_id, name, code)
+--   SELECT id, 'Coopersburg Main', 'WH1' FROM regions WHERE slug = 'lehigh-valley'
+--   AND NOT EXISTS (SELECT 1 FROM warehouses WHERE code = 'WH1');
+--
+-- CREATE INDEX IF NOT EXISTS idx_warehouses_region_id ON warehouses(region_id);
+--
+-- CREATE OR REPLACE FUNCTION get_default_warehouse_id()
+-- RETURNS uuid LANGUAGE sql STABLE AS $$
+--   SELECT id FROM warehouses WHERE code = 'WH1' LIMIT 1;
+-- $$;
+--
+-- DO $$ BEGIN
+--   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'location_type') THEN
+--     CREATE TYPE location_type AS ENUM ('drop_zone', 'staging_zone');
+--   END IF;
+-- END $$;
+--
+-- CREATE TABLE IF NOT EXISTS locations (
+--   id            uuid primary key default uuid_generate_v4(),
+--   warehouse_id  uuid not null references warehouses(id),
+--   type          location_type not null,
+--   code          text not null,
+--   notes         text,
+--   created_at    timestamptz not null default now(),
+--   UNIQUE (warehouse_id, code)
+-- );
+--
+-- CREATE INDEX IF NOT EXISTS idx_locations_warehouse_id ON locations(warehouse_id);
+-- CREATE INDEX IF NOT EXISTS idx_locations_type ON locations(type);
+--
+-- ALTER TABLE totes ADD COLUMN IF NOT EXISTS current_location_id uuid REFERENCES locations(id) ON DELETE SET NULL;
+-- CREATE INDEX IF NOT EXISTS idx_totes_current_location_id ON totes(current_location_id);
+--
+-- ALTER TABLE routes     ADD COLUMN IF NOT EXISTS warehouse_id uuid REFERENCES warehouses(id);
+-- ALTER TABLE pick_lists ADD COLUMN IF NOT EXISTS warehouse_id uuid REFERENCES warehouses(id);
+--
+-- UPDATE routes     SET warehouse_id = get_default_warehouse_id() WHERE warehouse_id IS NULL;
+-- UPDATE pick_lists SET warehouse_id = get_default_warehouse_id() WHERE warehouse_id IS NULL;
+--
+-- ALTER TABLE routes     ALTER COLUMN warehouse_id SET NOT NULL, ALTER COLUMN warehouse_id SET DEFAULT get_default_warehouse_id();
+-- ALTER TABLE pick_lists ALTER COLUMN warehouse_id SET NOT NULL, ALTER COLUMN warehouse_id SET DEFAULT get_default_warehouse_id();
+--
+-- CREATE INDEX IF NOT EXISTS idx_routes_warehouse_id ON routes(warehouse_id);
+-- CREATE INDEX IF NOT EXISTS idx_pick_lists_warehouse_id ON pick_lists(warehouse_id);
+--
+-- ALTER TABLE warehouses ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE locations  ENABLE ROW LEVEL SECURITY;
+--
+-- DROP POLICY IF EXISTS "warehouses_read_all" ON warehouses;
+-- CREATE POLICY "warehouses_read_all" ON warehouses
+--   FOR SELECT USING (auth.uid() IS NOT NULL);
+-- DROP POLICY IF EXISTS "warehouses_admin_write" ON warehouses;
+-- CREATE POLICY "warehouses_admin_write" ON warehouses
+--   FOR INSERT WITH CHECK (get_my_role() = 'admin');
+-- DROP POLICY IF EXISTS "warehouses_admin_update" ON warehouses;
+-- CREATE POLICY "warehouses_admin_update" ON warehouses
+--   FOR UPDATE USING (get_my_role() = 'admin');
+--
+-- DROP POLICY IF EXISTS "locations_staff_read" ON locations;
+-- CREATE POLICY "locations_staff_read" ON locations
+--   FOR SELECT USING (get_my_role() IN ('driver','warehouse','sorter','admin'));
+-- DROP POLICY IF EXISTS "locations_warehouse_write" ON locations;
+-- CREATE POLICY "locations_warehouse_write" ON locations
+--   FOR ALL USING (get_my_role() IN ('warehouse','admin'));
+--
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.warehouses TO authenticated;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.locations TO authenticated;
+--
+-- ⚠️ After running this, VERIFY THE GRANTS ACTUALLY LANDED — don't just
+-- trust the SQL "looked like it ran". This exact class of bug (a table
+-- silently missing from the real live GRANTs, with client writes doing
+-- nothing and no error surfaced) already happened once this session with
+-- tote_requests — see this file's CLAUDE.md-documented GRANTs section.
+-- Run this and confirm both rows come back:
+--   SELECT grantee, table_name, privilege_type FROM information_schema.role_table_grants
+--   WHERE table_name IN ('warehouses','locations') AND grantee = 'authenticated';
+--
+-- Phase 4 (future, NOT part of this migration): bins do not get a
+-- warehouse_id yet, and existing bin IDs (e.g. "A-12") are not renamed.
+-- That's deliberately deferred until a second physical warehouse is
+-- imminent and a real relabeling plan exists — see project memory / the
+-- approved plan for the full reasoning.
 
 -- ============================================================
 -- SEED DATA: Default bin setup (rows A, B, C — 10 totes each)

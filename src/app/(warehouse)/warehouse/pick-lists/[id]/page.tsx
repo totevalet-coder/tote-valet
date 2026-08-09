@@ -77,14 +77,14 @@ export default function PickListDetailPage() {
   }
 
   // Fires once the drop zone barcode is scanned — writes it onto every
-  // picked tote's bin_location (same field/pattern driver/return already
-  // uses for "where this tote currently physically sits") and only then
+  // picked tote's current_location_id (a real locations row, not a raw
+  // string dumped into bin_location like this used to do) and only then
   // marks the pick list itself complete. Returns an error message on
   // failure instead of failing silently.
-  async function completePickList(dropZoneVal: string): Promise<string | null> {
+  async function completePickList(locationId: string): Promise<string | null> {
     const allToteIds = bins.flatMap(b => b.totes.map(t => t.tote_id))
     const toteResults = await Promise.all(
-      allToteIds.map(toteId => supabase.from('totes').update({ bin_location: dropZoneVal }).eq('id', toteId))
+      allToteIds.map(toteId => supabase.from('totes').update({ current_location_id: locationId, bin_location: null }).eq('id', toteId))
     )
     const toteErr = toteResults.find(r => r.error)?.error
     if (toteErr) return `Couldn't save drop zone on totes: ${toteErr.message}`
@@ -102,14 +102,30 @@ export default function PickListDetailPage() {
 
   async function handleDropZoneScan(e: React.FormEvent) {
     e.preventDefault()
-    const val = dzScanValue.trim().toUpperCase()
-    if (!val) return
+    const code = dzScanValue.trim().toUpperCase()
+    if (!code) return
     setDzError('')
     setDzSaving(true)
-    const err = await completePickList(val)
+
+    // Validated against a real locations row now, instead of accepting any
+    // scanned string straight into bin_location.
+    const { data: location } = await supabase
+      .from('locations')
+      .select('id, code')
+      .eq('code', code)
+      .eq('type', 'drop_zone')
+      .maybeSingle()
+
+    if (!location) {
+      setDzSaving(false)
+      setDzError(`"${code}" isn't a registered drop zone. Check the code and try again, or ask a supervisor to add it in Warehouse Setup.`)
+      return
+    }
+
+    const err = await completePickList(location.id)
     setDzSaving(false)
     if (err) { setDzError(err); return }
-    setDropZoneValue(val)
+    setDropZoneValue(location.code)
     setPhase('complete')
   }
 

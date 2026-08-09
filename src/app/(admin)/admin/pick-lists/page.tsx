@@ -8,6 +8,8 @@ import { ClipboardList, Plus, Loader2, CheckCircle2, Info, RefreshCw } from 'luc
 import StatCard from '@/components/admin/StatCard'
 import { generatePickList } from '@/lib/pickLists'
 import { todayStr as businessTodayStr, localDayBoundsUTC } from '@/lib/date'
+import { listWarehouses } from '@/lib/warehouses'
+import type { Warehouse } from '@/types/database'
 
 interface EnrichedPickList extends PickList {
   assignedName: string | null
@@ -43,6 +45,17 @@ export default function AdminPickListsPage() {
   const [generating, setGenerating] = useState(false)
   const [generatedId, setGeneratedId] = useState<string | null>(null)
 
+  // Multi-warehouse readiness — every pick list carries a real
+  // warehouse_id now (see CLAUDE.md's Warehouses & Locations section).
+  // '' means "all warehouses" (the only meaningful state today, since
+  // there's just one — becomes useful without another UI pass once a
+  // second warehouse exists).
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouseFilter, setWarehouseFilter] = useState('')
+
+  useEffect(() => { listWarehouses(supabase).then(setWarehouses) }, [supabase])
+  const warehouseCode = (id: string | null) => warehouses.find(w => w.id === id)?.code ?? '—'
+
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); else setRefreshing(true)
 
@@ -53,6 +66,7 @@ export default function AdminPickListsPage() {
       const { startUTC, endUTC } = localDayBoundsUTC(selectedDate)
       q = q.gte('generated_at', startUTC).lt('generated_at', endUTC)
     }
+    if (warehouseFilter) q = q.eq('warehouse_id', warehouseFilter)
     const { data } = await q
     const rows = (data ?? []) as PickList[]
 
@@ -66,7 +80,7 @@ export default function AdminPickListsPage() {
     setLists(rows.map(r => ({ ...r, assignedName: r.assigned_to ? (nameMap[r.assigned_to] ?? 'Unknown') : null })))
     setLoading(false)
     setRefreshing(false)
-  }, [supabase, selectedDate, showAll])
+  }, [supabase, selectedDate, showAll, warehouseFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -98,6 +112,16 @@ export default function AdminPickListsPage() {
       <div className="flex items-center justify-between">
         <h1 className="font-black text-2xl text-brand-navy">Pick</h1>
         <div className="flex items-center gap-2">
+          {warehouses.length > 1 && (
+            <select
+              value={warehouseFilter}
+              onChange={e => setWarehouseFilter(e.target.value)}
+              className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600"
+            >
+              <option value="">All Warehouses</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.code}</option>)}
+            </select>
+          )}
           <input
             type="date"
             value={selectedDate}
@@ -177,6 +201,7 @@ export default function AdminPickListsPage() {
                 <thead>
                   <tr className="border-b border-gray-100 text-left">
                     <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Pick List</th>
+                    {warehouses.length > 1 && <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Warehouse</th>}
                     <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Totes</th>
                     <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Bin Range</th>
                     <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Assigned To</th>
@@ -190,6 +215,9 @@ export default function AdminPickListsPage() {
                     return (
                       <tr key={pl.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 font-mono font-bold text-brand-navy">{pl.id}</td>
+                        {warehouses.length > 1 && (
+                          <td className="px-4 py-3 text-xs font-semibold text-gray-500">{warehouseCode(pl.warehouse_id)}</td>
+                        )}
                         <td className="px-4 py-3 text-gray-600">{picked}/{total}</td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-500">{binRange(pl)}</td>
                         <td className="px-4 py-3 text-gray-600">{pl.assignedName ?? <span className="text-gray-300">Unassigned</span>}</td>

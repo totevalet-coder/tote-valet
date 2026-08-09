@@ -3,15 +3,17 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { ToteStatus, ToteItem } from '@/types/database'
+import type { ToteStatus, ToteItem, Warehouse as WarehouseType } from '@/types/database'
 import { Package, Search, ChevronRight, AlertCircle, X, Warehouse, Truck, ClipboardList, Flag } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
+import { listWarehouses } from '@/lib/warehouses'
 
 interface ToteRow {
   id: string
   status: ToteStatus
   tote_name: string | null
   bin_location: string | null
+  current_location_id: string | null
   seal_number: string | null
   last_scan_date: string | null
   customer_id: string
@@ -52,17 +54,35 @@ function AdminTotesContent() {
     initialStatus && initialStatus in STATUS_META ? initialStatus : 'all'
   )
 
+  // Multi-warehouse readiness — composable with the status filter (e.g.
+  // ?status=picked&warehouse=<id>). Only meaningfully narrows totes that
+  // have a current_location_id (picked/ready_to_stow) — totes in other
+  // statuses (stored, at customer, etc.) aren't warehouse-attributable yet
+  // since bins aren't warehouse-scoped (deliberately deferred, see
+  // CLAUDE.md), so they won't match ANY specific warehouse filter. Caveat
+  // shown in the UI when a filter is active rather than left implicit.
+  const initialWarehouse = searchParams.get('warehouse')
+  const [warehouseFilter, setWarehouseFilter] = useState(initialWarehouse ?? '')
+  const [warehouses, setWarehouses] = useState<WarehouseType[]>([])
+  const [locationWarehouseMap, setLocationWarehouseMap] = useState<Record<string, string>>({})
+
+  useEffect(() => { listWarehouses(supabase).then(setWarehouses) }, [supabase])
+
   const [counts, setCounts] = useState<Partial<Record<ToteStatus | 'all', number>>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
 
-    const [toteRes, binsRes] = await Promise.all([
+    const [toteRes, binsRes, locationsRes] = await Promise.all([
       supabase.from('totes')
-        .select('id, status, tote_name, bin_location, seal_number, last_scan_date, customer_id, items')
+        .select('id, status, tote_name, bin_location, current_location_id, seal_number, last_scan_date, customer_id, items')
         .order('status').order('id'),
       supabase.from('bins').select('capacity, current_count'),
+      supabase.from('locations').select('id, warehouse_id'),
     ])
+    const locMap: Record<string, string> = {}
+    ;(locationsRes.data ?? []).forEach(l => { locMap[l.id] = l.warehouse_id })
+    setLocationWarehouseMap(locMap)
 
     const toteData = toteRes.data
     if (!toteData) { setLoading(false); return }
@@ -97,6 +117,9 @@ function AdminTotesContent() {
   useEffect(() => {
     let result = totes
     if (activeStatus !== 'all') result = result.filter(t => t.status === activeStatus)
+    if (warehouseFilter) {
+      result = result.filter(t => t.current_location_id != null && locationWarehouseMap[t.current_location_id] === warehouseFilter)
+    }
     if (query.trim()) {
       const q = query.toLowerCase()
       result = result.filter(t =>
@@ -107,7 +130,7 @@ function AdminTotesContent() {
       )
     }
     setFiltered(result)
-  }, [query, activeStatus, totes])
+  }, [query, activeStatus, totes, warehouseFilter, locationWarehouseMap])
 
   const formatDate = (iso: string | null) => {
     if (!iso) return null
@@ -130,7 +153,25 @@ function AdminTotesContent() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px]">
-      <h1 className="font-black text-2xl text-brand-navy">Inventory</h1>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="font-black text-2xl text-brand-navy">Inventory</h1>
+        {warehouses.length > 1 && (
+          <select
+            value={warehouseFilter}
+            onChange={e => setWarehouseFilter(e.target.value)}
+            className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600"
+          >
+            <option value="">All Warehouses</option>
+            {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} only</option>)}
+          </select>
+        )}
+      </div>
+
+      {warehouseFilter && warehouses.length > 1 && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 -mt-2">
+          Only showing totes currently in a drop zone or staging zone at this warehouse — stored/at-customer/in-transit totes aren&apos;t warehouse-tagged yet.
+        </p>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

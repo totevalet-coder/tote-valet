@@ -7,6 +7,8 @@ import type { RouteStop } from '@/types/database'
 import { Package, CheckCircle2, AlertTriangle, Shuffle } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
 import { todayStr } from '@/lib/date'
+import { listWarehouses } from '@/lib/warehouses'
+import type { Warehouse } from '@/types/database'
 
 interface DropZoneRow {
   id: string
@@ -23,19 +25,34 @@ export default function AdminSortPage() {
   const [dropZone, setDropZone] = useState<DropZoneRow[]>([])
   const [sortedToday, setSortedToday] = useState(0)
 
+  // Multi-warehouse readiness — only Drop Zone is derivable by warehouse
+  // (via current_location_id -> locations.warehouse_id). Sorted Today uses
+  // the route-based zone pattern, deliberately untouched — see CLAUDE.md.
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouseFilter, setWarehouseFilter] = useState('')
+
+  useEffect(() => { listWarehouses(supabase).then(setWarehouses) }, [supabase])
+
   const load = useCallback(async () => {
     const today = todayStr()
     const startOfToday = new Date()
     startOfToday.setHours(0, 0, 0, 0)
 
-    const [totesRes, routesRes] = await Promise.all([
-      supabase.from('totes').select('id, status, customer_id, last_scan_date'),
+    const [totesRes, routesRes, locationsRes] = await Promise.all([
+      supabase.from('totes').select('id, status, customer_id, last_scan_date, current_location_id'),
       supabase.from('routes').select('id, driver_id, stops').eq('date', today),
+      supabase.from('locations').select('id, warehouse_id'),
     ])
 
     const totes = totesRes.data ?? []
     const routes = routesRes.data ?? []
-    const pickedTotes = totes.filter(t => t.status === 'picked')
+    const filteredLocationIds = warehouseFilter
+      ? new Set((locationsRes.data ?? []).filter(l => l.warehouse_id === warehouseFilter).map(l => l.id))
+      : null
+    const pickedTotes = totes.filter(t =>
+      t.status === 'picked' &&
+      (!filteredLocationIds || (t.current_location_id != null && filteredLocationIds.has(t.current_location_id)))
+    )
 
     const customerIds = [...new Set(pickedTotes.map(t => t.customer_id))]
     const driverIds = [...new Set(routes.map(r => r.driver_id).filter((v): v is string => !!v))]
@@ -83,7 +100,7 @@ export default function AdminSortPage() {
     setDropZone(rows)
     setSortedToday(sorted)
     setLoading(false)
-  }, [supabase])
+  }, [supabase, warehouseFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -99,7 +116,20 @@ export default function AdminSortPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1400px]">
-      <h1 className="font-black text-2xl text-brand-navy">Sort</h1>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="font-black text-2xl text-brand-navy">Sort</h1>
+        {warehouses.length > 1 && (
+          <select
+            value={warehouseFilter}
+            onChange={e => setWarehouseFilter(e.target.value)}
+            className="text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600"
+            title="Only narrows Drop Zone -- Sorted Today stays combined"
+          >
+            <option value="">All Warehouses</option>
+            {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} only</option>)}
+          </select>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="In Drop Zone" value={dropZone.length} subtext="Picked, awaiting sort" icon={Package} valueColor="text-amber-600" />

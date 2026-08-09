@@ -25,7 +25,12 @@ export default function DropTotesPage() {
 
   const [phase, setPhase] = useState<Phase>('zone')
   const [dropZone, setDropZone] = useState('')
+  // The real locations.id behind the scanned drop-zone code — what
+  // actually gets written to a tote's current_location_id. `dropZone`
+  // stays the display code (used in the confirmation UI + summary screen).
+  const [dropZoneLocationId, setDropZoneLocationId] = useState<string | null>(null)
   const [zoneError, setZoneError] = useState('')
+  const [zoneChecking, setZoneChecking] = useState(false)
 
   const [totes, setTotes] = useState<ReturnTote[]>([])
   const [loading, setLoading] = useState(true)
@@ -79,10 +84,32 @@ export default function DropTotesPage() {
 
   useEffect(() => { load() }, [load])
 
-  function handleZoneScan(val: string) {
+  async function handleZoneScan(val: string) {
     setZoneError('')
-    if (!val.trim()) { setZoneError('No zone scanned. Try again.'); return }
-    setDropZone(val.trim().toUpperCase())
+    const code = val.trim().toUpperCase()
+    if (!code) { setZoneError('No zone scanned. Try again.'); return }
+
+    // Validated against a real locations row now, instead of accepting any
+    // scanned string — closes a real gap (drop-zone codes previously went
+    // straight into bin_location with zero validation, see api/complete-
+    // route-stop's history / CLAUDE.md). Only drop_zone-type locations are
+    // valid here — staging zones are a different stage of the pipeline.
+    setZoneChecking(true)
+    const { data: location } = await supabase
+      .from('locations')
+      .select('id, code')
+      .eq('code', code)
+      .eq('type', 'drop_zone')
+      .maybeSingle()
+    setZoneChecking(false)
+
+    if (!location) {
+      setZoneError(`"${code}" isn't a registered drop zone. Check the code and try again, or ask a supervisor to add it in Warehouse Setup.`)
+      return
+    }
+
+    setDropZone(location.code)
+    setDropZoneLocationId(location.id)
     setPhase('totes')
   }
 
@@ -103,8 +130,10 @@ export default function DropTotesPage() {
     const isPoolTote = tote.customerId === WAREHOUSE_POOL_CUSTOMER_ID
     const { error } = await supabase.from('totes').update(
       isPoolTote
-        ? { status: 'stored', bin_location: null, last_scan_date: new Date().toISOString() }
-        : { status: 'ready_to_stow', bin_location: dropZone, last_scan_date: new Date().toISOString() }
+        ? { status: 'stored', bin_location: null, current_location_id: null, last_scan_date: new Date().toISOString() }
+        // Real drop zone, not a bin -- current_location_id, not bin_location
+        // (which stays null until a real bin gets scanned at Scan & Store).
+        : { status: 'ready_to_stow', bin_location: null, current_location_id: dropZoneLocationId, last_scan_date: new Date().toISOString() }
     ).eq('id', val)
 
     if (error) {
@@ -211,7 +240,7 @@ export default function DropTotesPage() {
             </div>
           )}
 
-          <BarcodeScanInput onScan={handleZoneScan} placeholder="Or enter zone ID…" autoFocusManual />
+          <BarcodeScanInput onScan={handleZoneScan} placeholder="Or enter zone ID…" autoFocusManual disabled={zoneChecking} />
         </div>
 
         <div className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
