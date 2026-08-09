@@ -113,7 +113,7 @@ export default function PickListDetailPage() {
     setPhase('complete')
   }
 
-  function handleScan(e: React.FormEvent) {
+  async function handleScan(e: React.FormEvent) {
     e.preventDefault()
     const val = scanValue.trim().toUpperCase()
     if (!val) return
@@ -140,7 +140,26 @@ export default function PickListDetailPage() {
         return
       }
 
-      // Mark tote as picked
+      // Persist the tote's REAL status first, and check the result —
+      // previously this was fire-and-forget (`void ...update()`, never
+      // awaited, never checked), which could silently fail without
+      // blocking anything: the pick list's own bins jsonb would still say
+      // "picked" (that write goes through separately, below) while the
+      // actual totes.status stayed wherever it was. That's invisible
+      // everywhere that matters — Sort's drop zone only looks at real
+      // tote status, not what a pick list's jsonb claims — and is exactly
+      // what happened to Kristin's tote (ending 9109): pick list said
+      // complete/picked, totes.status was still 'pending_pick', so it
+      // never appeared in Sort at all.
+      const { error: toteErr } = await supabase.from('totes').update({ status: 'picked' }).eq('id', val)
+      if (toteErr) {
+        setScanError(`Couldn't update ${val}: ${toteErr.message}. Try scanning it again.`)
+        setScanValue('')
+        return
+      }
+
+      // Only mark it picked in the pick list itself once the real tote
+      // status write above actually succeeded, so the two can't drift.
       const updatedBins = bins.map((b, bi) => {
         if (bi !== binIdx) return b
         return {
@@ -152,9 +171,6 @@ export default function PickListDetailPage() {
       })
       setBins(updatedBins)
       void saveProgress(updatedBins)
-
-      // Update tote status in DB to 'picked'
-      void supabase.from('totes').update({ status: 'picked' }).eq('id', val)
     }
 
     setScanValue('')
