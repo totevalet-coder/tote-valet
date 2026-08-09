@@ -8,6 +8,7 @@ import { ChevronLeft, Loader2, CheckCircle2 } from 'lucide-react'
 import AddressInput from '@/components/ui/AddressInput'
 import CardSetupForm from '@/components/ui/CardSetupForm'
 import type { CardSetupResult } from '@/components/ui/CardSetupForm'
+import { todayStr } from '@/lib/date'
 
 type Step = 1 | 2 | 3 | 'done'
 
@@ -111,7 +112,7 @@ function RegisterForm() {
           status: 'active',
           role: 'customer',
           free_exchanges_used: 0,
-          joined_date: new Date().toISOString().split('T')[0],
+          joined_date: todayStr(),
           notes: `Starting totes: ${data.startingTotes}. First pickup: ${data.firstPickupDate}`,
         })
 
@@ -328,7 +329,7 @@ function RegisterForm() {
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">What date do you want your empty totes delivered?</label>
                 <input type="date" value={data.firstPickupDate} onChange={e => update('firstPickupDate', e.target.value)}
-                  min={new Date().toISOString().split('T')[0]} className="input-field" />
+                  min={todayStr()} className="input-field" />
               </div>
               <button
                 onClick={() => {

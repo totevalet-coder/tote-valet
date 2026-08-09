@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
 import { Package, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
+import { todayStr } from '@/lib/date'
 
 interface DropZoneTote {
   id: string
@@ -69,7 +70,7 @@ export default function SortPage() {
       return
     }
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
     const { data: routes } = await supabase.from('routes').select('id, driver_id, stops').eq('date', today)
 
     let foundRoute: { id: string; driverId: string } | null = null

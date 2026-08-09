@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Truck, Package, ArrowDownToLine, ArrowRight, Download, Printer, FileText, MoreHorizontal, Trash2 } from 'lucide-react'
+import { todayStr as businessTodayStr, localDateStrFromISO } from '@/lib/date'
 
 type OrderType = 'empty_tote_delivery' | 'pickup' | 'full_tote_delivery'
 type OrderStatus = 'pending' | 'en_route' | 'complete'
@@ -36,10 +37,10 @@ type DateField = 'placed' | 'preferred' | 'delivered'
 const DATE_FIELD_LABEL: Record<DateField, string> = {
   placed: 'Date Placed', preferred: 'Preferred Date', delivered: 'Date Delivered',
 }
-// Consistent with the UTC-day convention used elsewhere in the app (Routes,
-// Pick) — good enough given nothing here is timezone-critical.
-function toUTCDateStr(iso: string | null): string | null {
-  return iso ? iso.split('T')[0] : null
+// Business-local calendar day the timestamp falls on (not the UTC day —
+// see src/lib/date.ts for why that distinction matters here).
+function toLocalDateStr(iso: string | null): string | null {
+  return iso ? localDateStrFromISO(iso) : null
 }
 function fmtDate(dateStr: string | null): string {
   if (!dateStr) return '—'
@@ -71,7 +72,7 @@ export default function OrdersPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = businessTodayStr()
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState<OrderType | 'all'>('all')
@@ -159,8 +160,8 @@ export default function OrdersPage() {
     .filter(o => {
       if (!dateFilterOn) return true
       const value = dateField === 'preferred' ? o.preferredDate
-        : dateField === 'placed' ? toUTCDateStr(o.datePlaced)
-        : toUTCDateStr(o.dateDelivered)
+        : dateField === 'placed' ? toLocalDateStr(o.datePlaced)
+        : toLocalDateStr(o.dateDelivered)
       return value === selectedDate
     })
 
@@ -240,14 +241,14 @@ export default function OrdersPage() {
     for (const o of selectedOrders.length > 0 ? selectedOrders : filtered) {
       rows.push([
         TYPE_META[o.type].label, o.customerName, o.customerAddress ?? '', String(o.toteIds.length || o.quantity || ''),
-        toUTCDateStr(o.datePlaced) ?? '', o.preferredDate ?? '', toUTCDateStr(o.dateDelivered) ?? '', STATUS_META[o.status].label,
+        toLocalDateStr(o.datePlaced) ?? '', o.preferredDate ?? '', toLocalDateStr(o.dateDelivered) ?? '', STATUS_META[o.status].label,
       ])
     }
     const csv = rows.map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = `orders-${new Date().toISOString().split('T')[0]}.csv`
+    a.href = url; a.download = `orders-${todayStr}.csv`
     a.click()
     URL.revokeObjectURL(url)
     setShowExport(false)
@@ -434,9 +435,9 @@ export default function OrdersPage() {
                           <span className="text-xs text-gray-400"> ({o.fullCount} full, {o.emptyCount} empty)</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(toUTCDateStr(o.datePlaced))}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(toLocalDateStr(o.datePlaced))}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(o.preferredDate)}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(toUTCDateStr(o.dateDelivered))}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(toLocalDateStr(o.dateDelivered))}</td>
                       <td className="px-4 py-3">
                         <span className={`status-pill text-[10px] ${statusMeta.color}`}>{statusMeta.label}</span>
                       </td>

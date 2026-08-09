@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Customer, RouteStop } from '@/types/database'
 import { ChevronLeft, Plus, X, Package, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { todayStr } from '@/lib/date'
 
 interface OrderRef {
   source: 'tote_request' | 'pickup_flag'
@@ -41,7 +42,7 @@ function NewRouteContent() {
   const [drivers, setDrivers] = useState<Customer[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [driverId, setDriverId] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(todayStr())
   const [routeId, setRouteId] = useState('')
 
   // Stop builder

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
 import { ScanLine, Package, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react'
+import { todayStr } from '@/lib/date'
 
 interface DropZoneTote {
   id: string
@@ -82,7 +83,7 @@ export default function SorterHomePage() {
     }
 
     // Find which route this tote belongs to (look in today's routes)
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
     const { data: routes } = await supabase
       .from('routes')
       .select('id, driver_id, stops')

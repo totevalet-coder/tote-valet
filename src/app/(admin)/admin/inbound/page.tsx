@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { RouteStop } from '@/types/database'
 import { Truck, Package, CheckCircle2, Warehouse, ArrowRight } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
+import { todayStr } from '@/lib/date'
 
 interface InboundStats {
   receivedToday: number
@@ -24,7 +25,7 @@ export default function InboundPage() {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
     const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0)
 
     const [totesRes, todaysRoutesRes] = await Promise.all([

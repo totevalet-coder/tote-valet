@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { todayStr } from './date'
 
 export type GeneratePickListResult =
   | { ok: true; id: string }
@@ -31,8 +32,13 @@ export async function generatePickList(supabase: SupabaseClient): Promise<Genera
   }
 
   const now = new Date()
-  const year = now.getFullYear()
-  const dayOfYear = Math.floor((now.getTime() - new Date(year, 0, 0).getTime()) / 86400000)
+  // Derived from the business-local calendar date (todayStr()), not raw
+  // Date math on `now` — that implicitly used whatever timezone the
+  // viewing browser happened to be in, which "usually" matches the
+  // business (Eastern) but isn't guaranteed, and is exactly the class of
+  // bug this whole date.ts module exists to close off.
+  const [year, month, day] = todayStr().split('-').map(Number)
+  const dayOfYear = Math.floor((Date.UTC(year, month - 1, day) - Date.UTC(year, 0, 1)) / 86400000) + 1
   const baseId = `PL-${year}-${String(dayOfYear).padStart(3, '0')}`
   const { data: existing } = await supabase.from('pick_lists').select('id').eq('id', baseId).maybeSingle()
   const id = existing ? `${baseId}-B` : baseId

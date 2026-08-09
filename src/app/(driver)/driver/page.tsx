@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
 import { MapPin, ChevronDown, ChevronUp, Navigation, CheckCircle2, AlertCircle, Clock, Package, Truck, PackageCheck } from 'lucide-react'
+import { todayStr } from '@/lib/date'
 
 export default function DriverRoutePage() {
   const router = useRouter()
@@ -39,7 +40,7 @@ export default function DriverRoutePage() {
     setDriverName(customer.name)
     setDriverId(customer.id)
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
     const { data: routes } = await supabase
       .from('routes')
       .select('*')

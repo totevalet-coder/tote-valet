@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
 import PaceIndicator from '@/components/admin/PaceIndicator'
+import { todayStr, BUSINESS_TIMEZONE } from '@/lib/date'
 
 interface DashboardStats {
   // Inbound Today
@@ -70,7 +71,7 @@ export default function AdminDashboard() {
     const { data: me } = await supabase.from('customers').select('role').eq('auth_id', userData.user.id).single()
     if (!me || me.role !== 'admin') { router.push('/dashboard'); return }
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
 
     const [totesRes, binsRes, pickListsRes, driversRes, todaysRoutesRes, thresholdsRes] = await Promise.all([
       supabase.from('totes').select('id, status, items'),
@@ -177,7 +178,10 @@ export default function AdminDashboard() {
     )
   }
 
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  // Explicit business timezone, not the viewing device's own — this is the
+  // date every other page's "Today" defaults to, so it needs to be right
+  // regardless of what timezone the admin happens to be viewing from.
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: BUSINESS_TIMEZONE })
   const elapsedPct = getShiftElapsedPct()
   // Fall back to the same defaults seeded in the schema if the row is somehow missing
   const t = stats.thresholds ?? {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { RouteStop } from '@/types/database'
 import { AlertTriangle, ClipboardList, Package, Boxes, ArrowRight, Shuffle } from 'lucide-react'
+import { todayStr } from '@/lib/date'
 
 interface WHStats {
   storedTotal: number
@@ -43,7 +44,7 @@ export default function WarehouseDashboard() {
       return
     }
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
     const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0)
 
     // Totes stored

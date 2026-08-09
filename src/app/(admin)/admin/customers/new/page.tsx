@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, Loader2 } from 'lucide-react'
+import { todayStr } from '@/lib/date'
 
 export default function NewCustomerPage() {
   const router = useRouter()
@@ -32,7 +33,7 @@ export default function NewCustomerPage() {
       role: 'customer',
       monthly_total: 0,
       free_exchanges_used: 0,
-      joined_date: new Date().toISOString().split('T')[0],
+      joined_date: todayStr(),
     })
 
     if (err) { setError(err.message); setSaving(false); return }

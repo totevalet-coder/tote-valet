@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
 import { CheckCircle2, Clock, Package, ChevronRight, Truck } from 'lucide-react'
+import { todayStr } from '@/lib/date'
 
 interface ZoneInfo {
   routeId: string
@@ -23,7 +24,7 @@ export default function StagingPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const loadZones = useCallback(async () => {
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
     const { data: routes } = await supabase
       .from('routes').select('*').eq('date', today).neq('status', 'complete').order('id')
 

@@ -7,6 +7,7 @@ import type { PickList, PickListBin } from '@/types/database'
 import { ClipboardList, Plus, Loader2, CheckCircle2, Info, RefreshCw } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
 import { generatePickList } from '@/lib/pickLists'
+import { todayStr as businessTodayStr, localDayBoundsUTC } from '@/lib/date'
 
 interface EnrichedPickList extends PickList {
   assignedName: string | null
@@ -33,7 +34,7 @@ function binRange(pl: PickList) {
 export default function AdminPickListsPage() {
   const router = useRouter()
   const supabase = createClient()
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = businessTodayStr()
   const [lists, setLists] = useState<EnrichedPickList[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -49,9 +50,8 @@ export default function AdminPickListsPage() {
     if (showAll) {
       q = q.limit(50)
     } else {
-      const start = `${selectedDate}T00:00:00.000Z`
-      const end = new Date(new Date(start).getTime() + 86400000).toISOString()
-      q = q.gte('generated_at', start).lt('generated_at', end)
+      const { startUTC, endUTC } = localDayBoundsUTC(selectedDate)
+      q = q.gte('generated_at', startUTC).lt('generated_at', endUTC)
     }
     const { data } = await q
     const rows = (data ?? []) as PickList[]

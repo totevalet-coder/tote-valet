@@ -9,6 +9,7 @@ import {
   RefreshCw, MapPin, AlertCircle, PackageCheck,
 } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
+import { todayStr as businessTodayStr } from '@/lib/date'
 
 interface EnrichedRoute extends Route {
   driverName: string
@@ -27,7 +28,7 @@ const STATUS_STYLES: Record<string, string> = {
 export default function AdminRoutesPage() {
   const router = useRouter()
   const supabase = createClient()
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = businessTodayStr()
   const [routes, setRoutes] = useState<EnrichedRoute[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Package, CheckCircle2, Loader2, Clock } from 'lucide-react'
 import BackButton from '@/components/ui/BackButton'
 import AlertBanner from '@/components/ui/AlertBanner'
+import { todayStr } from '@/lib/date'
 
 const QUICK_AMOUNTS = [1, 2, 3, 4]
 
@@ -13,8 +14,11 @@ const QUICK_AMOUNTS = [1, 2, 3, 4]
 // 24hr minimum lead time on preferred dates (min = tomorrow: `new
 // Date(Date.now() + 86400000)`). Temporarily relaxed to "today" so orders
 // can be placed and delivered same-day while running trials. REVERT once
-// trials are done — see CLAUDE.md TODOs and project memory.
-const MIN_PREFERRED_DATE = new Date().toISOString().split('T')[0]
+// trials are done — see CLAUDE.md TODOs and project memory. Uses the
+// business-timezone-correct todayStr(), not a raw UTC slice — otherwise
+// this "today" minimum would itself go stale every evening (see
+// src/lib/date.ts).
+const MIN_PREFERRED_DATE = todayStr()
 
 interface PendingDelivery {
   id: string

@@ -23,6 +23,7 @@ import {
   Pencil,
 } from 'lucide-react'
 import type { Tote, ToteItem } from '@/types/database'
+import { todayStr } from '@/lib/date'
 
 type FilterPill = 'all' | 'stored' | 'empty_at_customer' | 'in_transit'
 type Tab = 'browse' | 'pickup' | 'return'
@@ -44,7 +45,10 @@ const FILTER_PILLS: { key: FilterPill; label: string }[] = [
 // three preferred-date pickers below (pickup, return-empties, request-back)
 // so orders can be placed and delivered same-day while running trials.
 // REVERT once trials are done — see CLAUDE.md TODOs and project memory.
-const MIN_PREFERRED_DATE = new Date().toISOString().split('T')[0]
+// Uses the business-timezone-correct todayStr(), not a raw UTC slice —
+// otherwise this "today" minimum would itself go stale every evening
+// (see src/lib/date.ts).
+const MIN_PREFERRED_DATE = todayStr()
 
 function MyItemsContent() {
   const router = useRouter()

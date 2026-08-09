@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
 import { CheckCircle2, AlertCircle, Truck, Package } from 'lucide-react'
+import { todayStr } from '@/lib/date'
 
 export default function EndRoutePage() {
   const router = useRouter()
@@ -32,7 +33,7 @@ export default function EndRoutePage() {
       .single()
     if (!customer) return
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayStr()
     const { data: routes } = await supabase
       .from('routes')
       .select('*')
