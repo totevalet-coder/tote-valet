@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { ToteError } from '@/types/database'
+import type { ToteError, Warehouse } from '@/types/database'
 import { Search, CheckCircle, AlertCircle, Package, Pencil, Check, X, Map } from 'lucide-react'
+import { listWarehouses } from '@/lib/warehouses'
 
 type ReportTab = 'summary' | 'unstowed' | 'bins' | 'errors' | 'search'
 
@@ -24,6 +25,7 @@ interface BinInfo {
   row: string
   capacity: number
   current_count: number
+  warehouse_id: string
 }
 
 function ReportsContent() {
@@ -46,6 +48,15 @@ function ReportsContent() {
   const [editingBinId, setEditingBinId] = useState<string | null>(null)
   const [editCapacity, setEditCapacity] = useState('')
   const [savingBin, setSavingBin] = useState(false)
+
+  // Multi-warehouse readiness — bins.warehouse_id exists now (Phase 4, see
+  // CLAUDE.md's "bins.warehouse_id" section). Only the Bins tab is scoped
+  // by this filter; Summary's combined bin utilization stat is left alone
+  // on purpose, matching how the rest of Summary stays combined-by-default.
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [binsWarehouseFilter, setBinsWarehouseFilter] = useState('')
+  useEffect(() => { listWarehouses(supabase).then(setWarehouses) }, [supabase])
+  const filteredBins = binsWarehouseFilter ? bins.filter(b => b.warehouse_id === binsWarehouseFilter) : bins
 
   // Errors
   const [errors, setErrors] = useState<ToteError[]>([])
@@ -286,13 +297,24 @@ function ReportsContent() {
       {/* ── BINS (Warehouse Setup) ── */}
       {tab === 'bins' && (
         <div className="space-y-4">
+          {warehouses.length > 1 && (
+            <select
+              value={binsWarehouseFilter}
+              onChange={e => setBinsWarehouseFilter(e.target.value)}
+              className="w-full text-xs font-bold rounded-xl px-3 py-2.5 border-2 border-gray-200 text-gray-600"
+            >
+              <option value="">All Warehouses</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+            </select>
+          )}
+
           {/* Summary stats */}
-          {bins.length > 0 && (
+          {filteredBins.length > 0 && (
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: 'Rows Configured', value: new Set(bins.map(b => b.row)).size },
-                { label: 'Total Bins', value: bins.length },
-                { label: 'Total Capacity', value: bins.reduce((s, b) => s + b.capacity, 0) },
+                { label: 'Rows Configured', value: new Set(filteredBins.map(b => b.row)).size },
+                { label: 'Total Bins', value: filteredBins.length },
+                { label: 'Total Capacity', value: filteredBins.reduce((s, b) => s + b.capacity, 0) },
               ].map(({ label, value }) => (
                 <div key={label} className="card text-center py-3">
                   <p className="font-black text-xl text-brand-navy">{value}</p>
@@ -306,9 +328,11 @@ function ReportsContent() {
             <p className="text-xs text-gray-400 px-1">Tap a bin to override its capacity — e.g. something physically blocking that spot.</p>
           )}
 
-          {/* Row groups — dynamic, not hardcoded */}
-          {[...new Set(bins.map(b => b.row))].sort().map(row => {
-            const rowBins = bins.filter(b => b.row === row).sort((a, b) => a.id.localeCompare(b.id))
+          {/* Row groups — dynamic, not hardcoded. Grouping by row alone would
+              silently merge two different warehouses' "Row A" together, so
+              this only ever groups within the currently filtered set. */}
+          {[...new Set(filteredBins.map(b => b.row))].sort().map(row => {
+            const rowBins = filteredBins.filter(b => b.row === row).sort((a, b) => a.id.localeCompare(b.id))
             return (
               <div key={row}>
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Row {row}</h3>
@@ -360,8 +384,10 @@ function ReportsContent() {
               </div>
             )
           })}
-          {bins.length === 0 && (
-            <p className="text-center text-gray-400 text-sm py-8">No bins configured. Add bins in the database.</p>
+          {filteredBins.length === 0 && (
+            <p className="text-center text-gray-400 text-sm py-8">
+              {binsWarehouseFilter ? 'No bins configured for this warehouse yet.' : 'No bins configured. Add bins in the database.'}
+            </p>
           )}
           {/* Legend */}
           <div className="flex gap-4 justify-center pt-2">

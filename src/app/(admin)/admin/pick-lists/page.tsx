@@ -87,7 +87,12 @@ export default function AdminPickListsPage() {
   async function handleGenerate() {
     setGenerating(true)
     setGeneratedId(null)
-    const result = await generatePickList(supabase)
+    // warehouseFilter '' means "All Warehouses" in the view filter above,
+    // but generatePickList always scopes to one warehouse (defaulting to
+    // WH1 when undefined) — pass it through only when a specific one is
+    // selected, so picking "All Warehouses" here still generates for the
+    // default rather than silently mixing every warehouse's bins together.
+    const result = await generatePickList(supabase, warehouseFilter || undefined)
     if (result.ok) { setGeneratedId(result.id); load() }
     else alert(result.error)
     setGenerating(false)

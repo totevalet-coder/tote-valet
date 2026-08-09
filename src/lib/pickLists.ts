@@ -7,23 +7,45 @@ export type GeneratePickListResult =
   | { ok: false; error: string }
 
 /**
- * Pulls every `pending_pick` tote, groups it by bin (walk-order, not route-
- * aware — this is the existing "location-based" pick mode), and inserts a
- * new pick_lists row. Shared between the Dashboard quick action and the
- * Pick page's "+ Generate Pick List" button so the two don't drift.
+ * Pulls every `pending_pick` tote in the target warehouse, groups it by bin
+ * (walk-order, not route-aware — this is the existing "location-based" pick
+ * mode), and inserts a new pick_lists row. Shared between the Dashboard
+ * quick action and the Pick page's "+ Generate Pick List" button so the two
+ * don't drift.
  *
  * `warehouseId` defaults to the single seeded warehouse so existing callers
- * work unchanged. Known limitation: since `bins` isn't warehouse-scoped yet
- * (deliberately deferred — see CLAUDE.md's Warehouses & Locations section),
- * this only tags the resulting pick_lists row with a warehouse; it doesn't
- * yet filter which bins/totes get pulled to just that warehouse's own bins.
+ * work unchanged. Now that `bins.warehouse_id` exists (Phase 4, see
+ * CLAUDE.md's Warehouses & Locations section), totes are filtered to only
+ * those actually stored in a bin belonging to this warehouse — a WH2 pick
+ * list can no longer include a tote sitting in a WH1 bin. `bin_location` is
+ * a free-text bin id, not a warehouse-aware FK itself, so this has to join
+ * against `bins` rather than trust the tote row alone. Totes with no
+ * `bin_location` at all (a pre-existing, unrelated data-quality edge case)
+ * keep going into the "UNASSIGNED" bucket on every warehouse's pick list,
+ * same as before this change — deliberately not touched here.
  */
 export async function generatePickList(supabase: SupabaseClient, warehouseId?: string): Promise<GeneratePickListResult> {
-  const { data: totes } = await supabase
+  const resolvedWarehouseId = warehouseId ?? await getDefaultWarehouseId(supabase)
+
+  const { data: allPendingTotes } = await supabase
     .from('totes').select('id, bin_location, customer_id').eq('status', 'pending_pick')
 
-  if (!totes || totes.length === 0) {
+  if (!allPendingTotes || allPendingTotes.length === 0) {
     return { ok: false, error: 'No totes are currently pending pick.' }
+  }
+
+  let totes = allPendingTotes
+  if (resolvedWarehouseId) {
+    const binIds = [...new Set(allPendingTotes.map(t => t.bin_location).filter((v): v is string => !!v))]
+    const { data: binsInWarehouse } = binIds.length > 0
+      ? await supabase.from('bins').select('id').eq('warehouse_id', resolvedWarehouseId).in('id', binIds)
+      : { data: [] as { id: string }[] }
+    const validBinIds = new Set((binsInWarehouse ?? []).map(b => b.id))
+    totes = allPendingTotes.filter(t => !t.bin_location || validBinIds.has(t.bin_location))
+  }
+
+  if (totes.length === 0) {
+    return { ok: false, error: 'No totes are currently pending pick in this warehouse.' }
   }
 
   const customerIds = [...new Set(totes.map(t => t.customer_id))]
@@ -62,8 +84,6 @@ export async function generatePickList(supabase: SupabaseClient, warehouseId?: s
   if (!userData.user) return { ok: false, error: 'Not logged in.' }
   const { data: me } = await supabase.from('customers').select('id').eq('auth_id', userData.user.id).single()
   if (!me) return { ok: false, error: 'Could not find your customer record.' }
-
-  const resolvedWarehouseId = warehouseId ?? await getDefaultWarehouseId(supabase)
 
   const { error } = await supabase.from('pick_lists').insert({
     id,
