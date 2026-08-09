@@ -665,7 +665,7 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 --
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON public.dashboard_thresholds TO authenticated;
 
--- ⏳ PENDING — warehouses + locations tables, multi-warehouse readiness
+-- ✅ DONE — warehouses + locations tables, multi-warehouse readiness
 -- (Sections 4.0.1/4.0.2 above), plus totes.current_location_id,
 -- routes.warehouse_id, pick_lists.warehouse_id. Added 2026-08-09 ahead of
 -- a second physical warehouse going live — user's explicit design
@@ -675,9 +675,11 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 -- current_location_id, so a tote's warehouse is always derived from
 -- whatever location currently holds it, never stored redundantly.
 --
--- Run this whole block in the Supabase SQL editor, in order (each step
--- depends on the one before it — same nullable-then-backfill-then-tighten
--- discipline as the regions migration above). Then flip this to ✅ Done.
+-- Applied live 2026-08-09. GRANTs verified via information_schema.role_table_grants
+-- (both tables show SELECT/INSERT/UPDATE/DELETE for `authenticated`) — no
+-- repeat of the tote_requests gap. Block kept commented here as a record;
+-- the version actually run was pasted directly into the SQL editor, in
+-- order, matching this block statement-for-statement.
 --
 -- CREATE TABLE IF NOT EXISTS warehouses (
 --   id          uuid primary key default uuid_generate_v4(),
@@ -765,11 +767,42 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 --   SELECT grantee, table_name, privilege_type FROM information_schema.role_table_grants
 --   WHERE table_name IN ('warehouses','locations') AND grantee = 'authenticated';
 --
--- Phase 4 (future, NOT part of this migration): bins do not get a
--- warehouse_id yet, and existing bin IDs (e.g. "A-12") are not renamed.
--- That's deliberately deferred until a second physical warehouse is
--- imminent and a real relabeling plan exists — see project memory / the
--- approved plan for the full reasoning.
+-- ⏳ PENDING — bins.warehouse_id (Phase 4 of multi-warehouse readiness).
+-- Added 2026-08-09, once a second warehouse became imminent enough that
+-- the user asked for this to be built ahead of it. Existing bin IDs (e.g.
+-- "A-12") are NOT renamed — that would be a real physical relabeling event
+-- for WH1's already-printed labels, not something forced as a side effect
+-- of this migration. Only NEW bins created for a non-default warehouse get
+-- a warehouse-code-prefixed id going forward (e.g. "WH2-A-12"), enforced
+-- in app code (admin/warehouse-setup), not a DB constraint — Postgres has
+-- no clean way to say "unique per warehouse_id, but grandfather in rows
+-- that predate this column," so `bins.id` stays one global unique text PK.
+--
+-- Run this whole block in the Supabase SQL editor, in order. Then flip
+-- this to ✅ Done.
+--
+-- ALTER TABLE bins ADD COLUMN IF NOT EXISTS warehouse_id uuid REFERENCES warehouses(id);
+--
+-- UPDATE bins SET warehouse_id = get_default_warehouse_id() WHERE warehouse_id IS NULL;
+--
+-- ALTER TABLE bins ALTER COLUMN warehouse_id SET NOT NULL, ALTER COLUMN warehouse_id SET DEFAULT get_default_warehouse_id();
+--
+-- CREATE INDEX IF NOT EXISTS idx_bins_warehouse_id ON bins(warehouse_id);
+--
+-- No new RLS policies needed — bins' existing policies (role-based, not
+-- column-based) already cover this new column. No new GRANT needed either
+-- — bins is already in the ✅ Done GRANTs list in CLAUDE.md.
+--
+-- Verify the backfill landed before building/using warehouse-scoped bin
+-- code: SELECT COUNT(*) FROM bins WHERE warehouse_id IS NULL; -- must be 0
+--
+-- Still deliberately deferred past this migration: full warehouse-scoping
+-- of warehouse/scan-store's bin-scan step, warehouse/reports' Bins tab,
+-- and pickLists.ts's bin-selection logic. This migration + the
+-- warehouse-setup UI change alongside it make bin *creation* and *layout
+-- viewing* warehouse-aware; scan/report/pick-list consumers of bins still
+-- treat them as one flat pool. Revisit when a second warehouse actually
+-- has bins in it and that gap starts mattering day to day.
 
 -- ============================================================
 -- SEED DATA: Default bin setup (rows A, B, C — 10 totes each)

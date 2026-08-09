@@ -138,14 +138,19 @@ Billing: only bill the $15/mo storage fee when a tote is both in a billed-storag
 ## Supabase Notes
 
 ### Tables (all in `public` schema)
-`customers`, `totes`, `bins`, `routes`, `pick_lists`, `errors`, `regions`, `warehouses` (⏳ pending), `locations` (⏳ pending)
+`customers`, `totes`, `bins`, `routes`, `pick_lists`, `errors`, `regions`, `warehouses`, `locations`
 
 ### Regions (multi-region/franchise readiness)
 `regions` holds one row per service area (currently just `lehigh-valley`). `customers`, `totes`, `bins`, `routes`, `pick_lists`, and `errors` all carry a `region_id uuid not null default get_default_region_id() references regions(id)` — existing insert code doesn't need to change while there's only one region. Schema defined in `schema.sql` Section 4.0; live-DB migration applied 2026-08-03. Region-based RLS enforcement (customers/staff scoped to their own region) is intentionally not built yet — trivial to add later, deferred until there's a second region.
 
-### Warehouses & Locations (multi-warehouse readiness — ⏳ migration PENDING, not yet run)
+### Warehouses & Locations (multi-warehouse readiness — ✅ migration APPLIED 2026-08-09)
 Added 2026-08-09 ahead of Lehigh Valley operating a second physical building, per detailed user design decisions (see project memory for the full conversation). `warehouses` — one row per physical building (seeded with `WH1`, the current single warehouse), `code` is the prefix printed (smaller) on physical bin/zone labels. `locations` — warehouse-scoped, unlimited-per-warehouse, user-named drop zones and staging zones (`WH1-DZ-Dock`, `WH1-STG-02`), `type` enum `drop_zone | staging_zone`. `totes.current_location_id` (nullable FK to `locations`) is how a tote's current drop-zone/staging-zone is tracked — **totes deliberately do NOT get their own `warehouse_id`**; a tote's warehouse is always derived from whichever location currently holds it, never stored redundantly, so it can't go stale as totes move between buildings. `routes.warehouse_id` and `pick_lists.warehouse_id` are real columns now (both default to `WH1`) even though dispatch is single-hub today — cross-warehouse route consolidation is a real future need, explicitly deferred, not built.
-**`bins` is deliberately NOT touched in this phase** — no `warehouse_id`, no renamed IDs. Existing bin IDs (`A-12` etc.) don't need relabeling until a second warehouse is imminent and a real relabeling plan exists — that's Phase 4, a separate future migration. Full DDL: `schema.sql` Sections 4.0.1/4.0.2 (main body) + the `⏳ PENDING` migration block near the bottom of the file (search for "warehouses + locations tables"). **Ask the user whether this has been run in the Supabase SQL editor yet before assuming any warehouse/location data exists live** — app code built against these tables will fail until it has.
+Full DDL: `schema.sql` Sections 4.0.1/4.0.2 (main body) + the `✅ DONE` migration block near the bottom of the file (search for "warehouses + locations tables"). Migration applied live 2026-08-09; GRANTs verified via `information_schema.role_table_grants` (both tables show `SELECT`/`INSERT`/`UPDATE`/`DELETE` for `authenticated`).
+
+### `bins.warehouse_id` (Phase 4 — ⏳ migration PENDING, not yet run)
+Built 2026-08-09 once a second warehouse became imminent enough that the user asked for this ahead of schedule (originally this doc called it a separately-scheduled future phase — that changed same-day). Existing bin IDs (`A-12` etc.) are **not** renamed — that's a real physical relabeling event for WH1's already-printed labels, deliberately not forced by this migration. Going forward, only bins created for a non-default warehouse (any `code` other than `WH1`) get their id auto-prefixed with that warehouse's code (`WH2-A-12`) — enforced in `admin/warehouse-setup`'s create/drag-fill logic, not a DB constraint, since `bins.id` stays one global unique text PK (Postgres has no clean way to make it unique-per-warehouse while grandfathering in rows that predate the column).
+`admin/warehouse-setup`'s Bin Layout section is now warehouse-scoped: the same warehouse selector used for Drop Zones/Staging Zones also filters which bins are shown/created. **Still deliberately unscoped, not yet built**: `warehouse/scan-store`'s bin-scan step, `warehouse/reports`' Bins tab, and `pickLists.ts`'s bin-selection logic all still treat `bins` as one flat pool — revisit once a second warehouse actually has bins in it and that gap starts mattering day to day.
+Full DDL: `schema.sql`, search "bins.warehouse_id (Phase 4". **Ask the user whether this has been run in the Supabase SQL editor yet before assuming `bins.warehouse_id` exists live** — until it has, `admin/warehouse-setup` falls back to its old unfiltered/unprefixed behavior automatically (safe either way), but any other code written against `bins.warehouse_id` will fail.
 
 ### RLS is enabled on all tables.
 - Customers see only their own data
@@ -176,7 +181,8 @@ Any new table you create also needs a matching GRANT or supabase-js won't see it
 **`warehouses` and `locations` (added 2026-08-09, ⏳ pending)** — the GRANT statements are included directly in the migration block (`schema.sql`, search "warehouses + locations tables") this time, not left to a separate doc-only step, precisely to avoid repeating the `tote_requests` gap above. Still: **verify live** via `information_schema.role_table_grants` after the user runs the migration (the migration block itself includes this exact query) — don't take it on faith just because it's in the SQL this time either.
 
 ### Migrations (schema.sql updated May 29, 2026 to match — see file for full history)
-- ⏳ **PENDING** — `warehouses` + `locations` tables, `totes.current_location_id`, `routes.warehouse_id`, `pick_lists.warehouse_id` (multi-warehouse readiness). Added 2026-08-09, not yet run. See the Warehouses & Locations section above.
+- ⏳ **PENDING** — `bins.warehouse_id` (Phase 4 of multi-warehouse readiness). Added 2026-08-09, not yet run. See the `bins.warehouse_id` section above.
+- ✅ `warehouses` + `locations` tables, `totes.current_location_id`, `routes.warehouse_id`, `pick_lists.warehouse_id` (multi-warehouse readiness). Added and applied 2026-08-09. See the Warehouses & Locations section above.
 - ✅ `regions` table + `region_id` on all tables (multi-region/franchise readiness). Applied 2026-08-03.
 - ✅ `totes.empty_since` — already live
 - ✅ `totes.pickup_requested` — already live

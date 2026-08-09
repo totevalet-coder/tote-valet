@@ -22,6 +22,7 @@ export type Database = {
           notes: string | null
           region_id: string
           row: string
+          warehouse_id: string
         }
         Insert: {
           capacity?: number
@@ -30,6 +31,7 @@ export type Database = {
           notes?: string | null
           region_id?: string
           row: string
+          warehouse_id?: string
         }
         Update: {
           capacity?: number
@@ -38,6 +40,7 @@ export type Database = {
           notes?: string | null
           region_id?: string
           row?: string
+          warehouse_id?: string
         }
         Relationships: [
           {
@@ -45,6 +48,13 @@ export type Database = {
             columns: ["region_id"]
             isOneToOne: false
             referencedRelation: "regions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bins_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
             referencedColumns: ["id"]
           },
         ]

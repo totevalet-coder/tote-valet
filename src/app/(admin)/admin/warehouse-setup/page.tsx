@@ -79,12 +79,23 @@ export default function WarehouseSetupPage() {
   const [dragCount, setDragCount] = useState(0)
   const dragStartY = useRef(0)
 
+  // Waits for the warehouses fetch to resolve once before bins load, so
+  // bins aren't fetched unfiltered-then-refiltered (a visible flash of the
+  // wrong stat numbers) once bins.warehouse_id exists.
+  const [warehousesLoaded, setWarehousesLoaded] = useState(false)
+
   const load = useCallback(async () => {
+    if (!warehousesLoaded) return
     setLoading(true)
-    const { data } = await supabase.from('bins').select('id, row, capacity, current_count').order('id')
+    // Pre-Phase-4-migration (warehouses.length === 0, selectedWarehouseId
+    // ''), this stays unfiltered — bins.warehouse_id may not exist yet on
+    // the live DB. Once it does, every bin has a warehouse_id (backfilled
+    // to WH1), so filtering is always safe from then on.
+    const query = supabase.from('bins').select('id, row, capacity, current_count').order('id')
+    const { data } = await (selectedWarehouseId ? query.eq('warehouse_id', selectedWarehouseId) : query)
     setBins((data ?? []) as BinInfo[])
     setLoading(false)
-  }, [supabase])
+  }, [supabase, selectedWarehouseId, warehousesLoaded])
 
   useEffect(() => { load() }, [load])
 
@@ -95,6 +106,7 @@ export default function WarehouseSetupPage() {
     listWarehouses(supabase).then(list => {
       setWarehouses(list)
       if (list.length > 0) setSelectedWarehouseId(prev => prev || list[0].id)
+      setWarehousesLoaded(true)
     })
   }, [supabase])
 
@@ -135,6 +147,15 @@ export default function WarehouseSetupPage() {
   const rows = [...new Set(bins.map(b => b.row))].sort()
   const defaultCapacity = mode(bins.map(b => b.capacity))
 
+  // bins.id is one global unique text PK (see schema.sql's Phase 4 note) —
+  // it's never renamed for existing WH1 bins, but any warehouse other than
+  // the default (code 'WH1') gets its new bin IDs prefixed with its own
+  // code, so "A-12" in WH1 and "WH2-A-12" in WH2 can't collide and the ID
+  // itself carries which building it's in, matching the physical label.
+  const selectedWarehouse = warehouses.find(w => w.id === selectedWarehouseId)
+  const isDefaultWarehouse = !selectedWarehouse || selectedWarehouse.code === 'WH1'
+  const binIdPrefix = isDefaultWarehouse ? '' : `${selectedWarehouse.code}-`
+
   async function createRow() {
     setCreateError('')
     const letter = rowLetter.trim().toUpperCase()
@@ -146,8 +167,9 @@ export default function WarehouseSetupPage() {
     if (!Number.isFinite(start) || start < 1) { setCreateError('Starting bin # must be at least 1.'); return }
     if (!Number.isFinite(count) || count < 1 || count > 100) { setCreateError('Number of bins must be between 1 and 100.'); return }
     if (!Number.isFinite(capacity) || capacity < 0) { setCreateError('Shelf capacity must be 0 or more.'); return }
+    if (warehouses.length > 0 && !selectedWarehouseId) { setCreateError('Select a warehouse first.'); return }
 
-    const newIds = Array.from({ length: count }, (_, i) => `${letter}-${String(start + i).padStart(2, '0')}`)
+    const newIds = Array.from({ length: count }, (_, i) => `${binIdPrefix}${letter}-${String(start + i).padStart(2, '0')}`)
 
     setCreating(true)
     const { data: existing } = await supabase.from('bins').select('id').in('id', newIds)
@@ -158,7 +180,10 @@ export default function WarehouseSetupPage() {
     }
 
     const { error } = await supabase.from('bins').insert(
-      newIds.map(id => ({ id, row: letter, capacity, current_count: 0 }))
+      newIds.map(id => ({
+        id, row: letter, capacity, current_count: 0,
+        ...(selectedWarehouseId ? { warehouse_id: selectedWarehouseId } : {}),
+      }))
     )
     if (error) { setCreateError(error.message); setCreating(false); return }
 
@@ -196,12 +221,15 @@ export default function WarehouseSetupPage() {
     const rowBins = bins.filter(b => b.row === row)
     const maxNum = Math.max(0, ...rowBins.map(b => parseBinNum(b.id)))
     const capacity = mode(rowBins.map(b => b.capacity))
-    const newIds = Array.from({ length: count }, (_, i) => `${row}-${String(maxNum + 1 + i).padStart(2, '0')}`)
+    const newIds = Array.from({ length: count }, (_, i) => `${binIdPrefix}${row}-${String(maxNum + 1 + i).padStart(2, '0')}`)
 
     const { data: existing } = await supabase.from('bins').select('id').in('id', newIds)
     if (existing && existing.length > 0) return // silently skip on collision, drag is best-effort
 
-    await supabase.from('bins').insert(newIds.map(id => ({ id, row, capacity, current_count: 0 })))
+    await supabase.from('bins').insert(newIds.map(id => ({
+      id, row, capacity, current_count: 0,
+      ...(selectedWarehouseId ? { warehouse_id: selectedWarehouseId } : {}),
+    })))
     setSaveMsg(`Added ${count} bin${count !== 1 ? 's' : ''} to Row ${row}`)
     setTimeout(() => setSaveMsg(null), 3000)
     load()
@@ -254,6 +282,9 @@ export default function WarehouseSetupPage() {
           <p className="text-xs text-gray-400 mt-0.5">
             Drag a row&apos;s fill handle down to auto-label new bins — same as dragging a formula down. Or build from
             here directly: rows of bins, Excel-style, so labeling 20 bins isn&apos;t 20 manual entries.
+            {warehouses.length > 0 && (
+              <> Scoped to <span className="font-semibold">{selectedWarehouse?.code ?? 'this warehouse'}</span> — switch warehouses above to manage another building&apos;s bins.</>
+            )}
           </p>
         </div>
 
@@ -262,7 +293,9 @@ export default function WarehouseSetupPage() {
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">New Row</p>
           <div className="flex flex-wrap gap-3 items-end">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Row Letter</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">
+                Row Letter {!isDefaultWarehouse && <span className="text-gray-300 font-normal normal-case">(labeled {binIdPrefix}{rowLetter || 'F'}-##)</span>}
+              </label>
               <input type="text" maxLength={1} value={rowLetter} onChange={e => setRowLetter(e.target.value.toUpperCase())}
                 className="w-16 border border-gray-300 rounded-lg px-2 py-2 text-sm text-center uppercase" placeholder="F" />
             </div>
@@ -346,7 +379,7 @@ export default function WarehouseSetupPage() {
                               const nextNum = parseBinNum(lastBin.id) + 1 + i
                               return (
                                 <div key={i} className="rounded-xl border-2 border-dashed border-brand-blue/40 bg-brand-blue/5 px-3 py-2.5 text-center w-20">
-                                  <p className="font-black text-xs text-brand-blue/60">{row}-{String(nextNum).padStart(2, '0')}</p>
+                                  <p className="font-black text-xs text-brand-blue/60">{binIdPrefix}{row}-{String(nextNum).padStart(2, '0')}</p>
                                   <p className="text-[10px] text-brand-blue/40">new</p>
                                 </div>
                               )
