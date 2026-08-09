@@ -6,11 +6,13 @@ import { createClient } from '@/lib/supabase/client'
 import type { Route, RouteStop } from '@/types/database'
 import { CheckCircle2, AlertTriangle, Package, ChevronLeft, PackageCheck, ScanLine } from 'lucide-react'
 import BarcodeScanInput from '@/components/ui/BarcodeScanInput'
+import { WAREHOUSE_POOL_CUSTOMER_ID } from '@/lib/warehousePool'
 
 type Phase = 'zone' | 'totes'
 
 interface ReturnTote {
   id: string
+  customerId: string
   customerName: string
   sealNumber: string | null
   dropped: boolean
@@ -64,6 +66,7 @@ export default function DropTotesPage() {
       const { data: cust } = await supabase.from('customers').select('name').eq('id', t.customer_id).single()
       enriched.push({
         id: t.id,
+        customerId: t.customer_id,
         customerName: cust?.name ?? 'Unknown',
         sealNumber: t.seal_number,
         dropped: t.status === 'ready_to_stow',
@@ -83,17 +86,31 @@ export default function DropTotesPage() {
     setPhase('totes')
   }
 
-  function handleToteScan(val: string) {
+  async function handleToteScan(val: string) {
     setScanError('')
     const idx = totes.findIndex(t => t.id === val)
     if (idx === -1) { setScanError(`${val} is not on this route's pickup list.`); return }
     if (totes[idx].dropped) { setScanError(`${val} already scanned.`); return }
 
-    supabase.from('totes').update({
-      status: 'ready_to_stow',
-      bin_location: dropZone,
-      last_scan_date: new Date().toISOString(),
-    }).eq('id', val).then(() => {})
+    const tote = totes[idx]
+    // An empty tote already reassigned to the Warehouse Pool at
+    // pickup-completion time (see api/complete-route-stop) has nothing
+    // left to stow -- it's just reusable inventory now, not a real
+    // customer's belongings needing a bin. Skip the ready_to_stow ->
+    // Scan & Store pipeline entirely and drop it straight into 'stored'
+    // with no bin_location (a generic pile, not a specific shelf) so it
+    // doesn't need scanning again either.
+    const isPoolTote = tote.customerId === WAREHOUSE_POOL_CUSTOMER_ID
+    const { error } = await supabase.from('totes').update(
+      isPoolTote
+        ? { status: 'stored', bin_location: null, last_scan_date: new Date().toISOString() }
+        : { status: 'ready_to_stow', bin_location: dropZone, last_scan_date: new Date().toISOString() }
+    ).eq('id', val)
+
+    if (error) {
+      setScanError(`Couldn't update ${val}: ${error.message}. Try scanning it again.`)
+      return
+    }
 
     setTotes(prev => prev.map((t, i) => i === idx ? { ...t, dropped: true } : t))
   }
@@ -150,7 +167,9 @@ export default function DropTotesPage() {
 
         <div className="bg-brand-blue/5 border border-brand-blue/20 rounded-2xl px-4 py-3">
           <p className="text-xs font-bold text-brand-navy">Warehouse notified</p>
-          <p className="text-xs text-gray-500 mt-0.5">All totes marked Ready to Stow. Great work today!</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Full totes marked Ready to Stow · empty totes are already back in general inventory, no stowing needed. Great work today!
+          </p>
         </div>
 
         <button onClick={() => router.push('/driver')} className="btn-primary w-full">
