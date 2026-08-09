@@ -7,6 +7,7 @@ import type { Customer } from '@/types/database'
 import { Search, UserPlus, ChevronRight, Users, DollarSign, AlertTriangle } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
 import { formatCurrency } from '@/lib/billing'
+import { WAREHOUSE_POOL_CUSTOMER_ID } from '@/lib/warehousePool'
 
 export default function AdminCustomersPage() {
   const router = useRouter()
@@ -19,7 +20,7 @@ export default function AdminCustomersPage() {
 
   const load = useCallback(async () => {
     const [custRes, totesRes] = await Promise.all([
-      supabase.from('customers').select('*').eq('role', 'customer').order('name'),
+      supabase.from('customers').select('*').eq('role', 'customer').neq('id', WAREHOUSE_POOL_CUSTOMER_ID).order('name'),
       supabase.from('totes').select('customer_id'),
     ])
     if (custRes.data) { setCustomers(custRes.data as Customer[]); setFiltered(custRes.data as Customer[]) }

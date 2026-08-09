@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Customer, RouteStop } from '@/types/database'
 import { ChevronLeft, Plus, X, Package, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 import { todayStr } from '@/lib/date'
+import { WAREHOUSE_POOL_CUSTOMER_ID } from '@/lib/warehousePool'
 
 interface OrderRef {
   source: 'tote_request' | 'pickup_flag'
@@ -72,7 +73,7 @@ function NewRouteContent() {
 
   const load = useCallback(async () => {
     const { data: d } = await supabase.from('customers').select('*').eq('role', 'driver')
-    const { data: c } = await supabase.from('customers').select('*').eq('role', 'customer').order('name')
+    const { data: c } = await supabase.from('customers').select('*').eq('role', 'customer').neq('id', WAREHOUSE_POOL_CUSTOMER_ID).order('name')
     if (d) setDrivers(d as Customer[])
     if (c) setCustomers(c as Customer[])
 

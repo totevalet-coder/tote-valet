@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { calcMonthlyTotal, MISSING_TOTE_CHARGE, formatCurrency } from '@/lib/billing'
 import StatCard from '@/components/admin/StatCard'
+import { WAREHOUSE_POOL_CUSTOMER_ID } from '@/lib/warehousePool'
 
 type BillingTab = 'summary' | 'by-customer' | 'failed' | 'missing-totes'
 
@@ -53,11 +54,12 @@ function BillingContent() {
 
   const load = useCallback(async () => {
     const [custRes, suspendedRes] = await Promise.all([
-      supabase.from('customers').select('*').eq('role', 'customer').order('name'),
+      supabase.from('customers').select('*').eq('role', 'customer').neq('id', WAREHOUSE_POOL_CUSTOMER_ID).order('name'),
       supabase
         .from('customers')
         .select('id, name, totes(id, tote_name, status)')
         .eq('role', 'customer')
+        .neq('id', WAREHOUSE_POOL_CUSTOMER_ID)
         .eq('status', 'suspended'),
     ])
 

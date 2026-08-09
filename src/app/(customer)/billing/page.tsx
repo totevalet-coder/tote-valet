@@ -9,7 +9,7 @@ import CardSetupForm from '@/components/ui/CardSetupForm'
 import type { CardSetupResult } from '@/components/ui/CardSetupForm'
 import BackButton from '@/components/ui/BackButton'
 import { SkeletonList } from '@/components/ui/LoadingSkeleton'
-import { FREE_EXCHANGES_PER_YEAR, GRACE_PERIOD_DAYS } from '@/lib/billing'
+import { FREE_EXCHANGES_PER_YEAR, GRACE_PERIOD_DAYS, isBillableStorage } from '@/lib/billing'
 
 interface CardInfo {
   last4: string
@@ -95,23 +95,33 @@ export default function BillingPage() {
     return days <= GRACE_PERIOD_DAYS
   }
 
-  const billingLines: BillingLine[] = totes.map(t => {
-    if (t.status === 'empty_at_customer') {
-      const grace = isGrace(t)
+  // Same rule as calcMonthlyTotal() in lib/billing.ts, via the shared
+  // isBillableStorage() helper — this page used to duplicate that logic
+  // by hand (every non-empty_at_customer tote billed $15/mo flat, with no
+  // items check at all) and drifted from it, which is exactly how an
+  // empty tote picked up and returned to the warehouse kept showing up
+  // here as a full $15/mo charge even after the underlying calculation
+  // was fixed elsewhere. A non-billable tote (empty, out of the house, no
+  // charge) is simply left off the invoice — nothing to show.
+  const billingLines: BillingLine[] = totes
+    .filter(t => t.status === 'empty_at_customer' || isBillableStorage(t))
+    .map(t => {
+      if (t.status === 'empty_at_customer') {
+        const grace = isGrace(t)
+        return {
+          toteName: t.tote_name ?? t.id,
+          status: grace ? `Empty at Home · Grace period (${GRACE_PERIOD_DAYS}-day pickup window)` : 'Empty at Home',
+          charge: grace ? 0 : 1.0,
+          chargeType: 'weekly',
+        }
+      }
       return {
         toteName: t.tote_name ?? t.id,
-        status: grace ? `Empty at Home · Grace period (${GRACE_PERIOD_DAYS}-day pickup window)` : 'Empty at Home',
-        charge: grace ? 0 : 1.0,
-        chargeType: 'weekly',
+        status: t.status === 'stored' ? 'In Warehouse' : t.status.replace(/_/g, ' '),
+        charge: 15.0,
+        chargeType: 'monthly',
       }
-    }
-    return {
-      toteName: t.tote_name ?? t.id,
-      status: t.status === 'stored' ? 'In Warehouse' : t.status.replace(/_/g, ' '),
-      charge: 15.0,
-      chargeType: 'monthly',
-    }
-  })
+    })
 
   const monthlyTotal = billingLines
     .filter(l => l.chargeType === 'monthly')

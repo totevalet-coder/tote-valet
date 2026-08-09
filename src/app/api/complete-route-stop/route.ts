@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { calcMonthlyTotal } from '@/lib/billing'
+import { WAREHOUSE_POOL_CUSTOMER_ID } from '@/lib/warehousePool'
 
 // Service-role client — bypasses RLS. The driver browser client updating
 // tote_requests directly was a likely-silent no-op: routes/totes/errors
@@ -38,6 +39,20 @@ export async function POST(req: NextRequest) {
     // already stowed in the warehouse.
     if (type === 'pickup' && Array.isArray(toteIds) && toteIds.length > 0) {
       await supabase.from('totes').update({ pickup_requested: false }).in('id', toteIds)
+
+      // Whichever of these totes came back EMPTY is no longer "the
+      // customer's" at all — it's just reusable company inventory now,
+      // not storing anything for anyone, and needs no stow/Scan & Store
+      // step to be considered returned. Reassign it to the Warehouse Pool
+      // placeholder the instant this pickup completes (a full tote of real
+      // belongings is left alone — that's genuine storage, still theirs).
+      const { data: pickedTotes } = await supabase.from('totes').select('id, items').in('id', toteIds)
+      const emptyToteIds = (pickedTotes ?? [])
+        .filter(t => ((t.items as unknown[] | null)?.length ?? 0) === 0)
+        .map(t => t.id)
+      if (emptyToteIds.length > 0) {
+        await supabase.from('totes').update({ customer_id: WAREHOUSE_POOL_CUSTOMER_ID }).in('id', emptyToteIds)
+      }
     }
 
     if (orderRef?.source === 'tote_request') {

@@ -18,24 +18,32 @@ export const BILLED_STORAGE_STATUSES: ToteStatus[] = [
   'in_transit',
 ]
 
-// ── calcMonthlyTotal ──────────────────────────────────────────────────────────
-// Computes the estimated monthly charge for a customer based on their totes.
-// Pass the customer's totes array (status + items); returns dollar amount.
-//
-// The $15/mo storage fee only applies to a tote that's actually storing the
-// customer's belongings — i.e. it's out of BILLED_STORAGE_STATUSES AND has
-// real items in it. An empty tote picked up/returned to the company (no
-// items, any status other than empty_at_customer) isn't "storage" of
-// anything and isn't billed at all: not the $1/wk at-home fee (it's not at
-// the customer's home anymore) and not the $15/mo storage fee (it isn't
+// ── isBillableStorage ──────────────────────────────────────────────────────────
+// True if a tote is actually storing the customer's belongings and should
+// incur the $15/mo fee — i.e. it's in BILLED_STORAGE_STATUSES AND has real
+// items in it. An empty tote picked up/returned to the company (no items,
+// any status other than empty_at_customer) isn't "storage" of anything and
+// isn't billed at all: not the $1/wk at-home fee (it's not at the
+// customer's home anymore) and not the $15/mo storage fee (it isn't
 // storing anything). Confirmed as a real bug 2026-08-08: an empty tote
 // picked up from a customer and returned to the warehouse kept incurring
 // the full $15/mo the instant it left empty_at_customer status, same as if
-// it were full of their belongings — this filter is what stops that.
+// it were full of their belongings.
+//
+// Single source of truth for this rule — both calcMonthlyTotal() below and
+// the customer-facing /billing page use this, after the same bug turned
+// out to exist as a SEPARATE hand-rolled duplicate of this exact check on
+// that page (never touched by the first fix here, since nothing pointed
+// at it). Don't let a third copy of this logic get written somewhere else.
+export function isBillableStorage(t: { status: string; items?: unknown[] | null }): boolean {
+  return BILLED_STORAGE_STATUSES.includes(t.status as ToteStatus) && (t.items?.length ?? 0) > 0
+}
+
+// ── calcMonthlyTotal ──────────────────────────────────────────────────────────
+// Computes the estimated monthly charge for a customer based on their totes.
+// Pass the customer's totes array (status + items); returns dollar amount.
 export function calcMonthlyTotal(totes: { status: string; items?: unknown[] | null }[]): number {
-  const storageTotes = totes.filter(t =>
-    BILLED_STORAGE_STATUSES.includes(t.status as ToteStatus) && (t.items?.length ?? 0) > 0
-  )
+  const storageTotes = totes.filter(isBillableStorage)
   const emptyTotes = totes.filter(t => t.status === 'empty_at_customer')
 
   return (
