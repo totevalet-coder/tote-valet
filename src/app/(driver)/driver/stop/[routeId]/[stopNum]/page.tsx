@@ -231,21 +231,23 @@ export default function StopDetailPage() {
 
   // Fires whenever a stop transitions to completed (normal or force) —
   // writes the "delivered" moment back to the order that produced this
-  // stop, and (for pickups) clears totes.pickup_requested so My Items
-  // stops showing a stale "Pickup Requested" badge on totes that are
-  // already stowed. Routed through a server API using the service-role
-  // key instead of writing tote_requests directly from here: the driver
-  // client has no documented write grant on that table (see CLAUDE.md's
-  // GRANTs section — tote_requests was never added to it), so a direct
-  // .update() here could silently do nothing, which is exactly what was
-  // happening in practice. Best-effort either way: a failure here
-  // shouldn't block the stop, which already completed successfully.
+  // stop, clears totes.pickup_requested (pickups) so My Items stops
+  // showing a stale "Pickup Requested" badge on totes that are already
+  // stowed, and recalculates the customer's real-time bill so it doesn't
+  // wait on the next manual admin "Recalculate." Routed through a server
+  // API using the service-role key instead of writing tote_requests
+  // directly from here: the driver client has no documented write grant
+  // on that table (see CLAUDE.md's GRANTs section — tote_requests was
+  // never added to it), so a direct .update() here could silently do
+  // nothing, which is exactly what was happening in practice. Best-effort
+  // either way: a failure here shouldn't block the stop, which already
+  // completed successfully.
   async function completeLinkedOrder(s: RouteStop) {
     try {
       await fetch('/api/complete-route-stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toteIds: s.tote_ids, type: s.type, orderRef: s.order_ref }),
+        body: JSON.stringify({ toteIds: s.tote_ids, type: s.type, orderRef: s.order_ref, customerId: s.customer_id }),
       })
     } catch {
       // Network hiccup — non-fatal, see comment above.

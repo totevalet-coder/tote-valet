@@ -85,14 +85,14 @@ function BillingContent() {
     setSyncResult(null)
 
     // Load all totes in one query
-    const { data: allTotes } = await supabase.from('totes').select('customer_id, status')
+    const { data: allTotes } = await supabase.from('totes').select('customer_id, status, items')
     if (!allTotes) { setSyncing(false); return }
 
     // Group by customer
-    const byCustomer: Record<string, { status: string }[]> = {}
+    const byCustomer: Record<string, { status: string; items: unknown[] | null }[]> = {}
     for (const t of allTotes) {
       if (!byCustomer[t.customer_id]) byCustomer[t.customer_id] = []
-      byCustomer[t.customer_id].push({ status: t.status })
+      byCustomer[t.customer_id].push({ status: t.status, items: t.items as unknown[] | null })
     }
 
     // Update each customer

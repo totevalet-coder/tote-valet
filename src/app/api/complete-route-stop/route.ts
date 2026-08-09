@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { calcMonthlyTotal } from '@/lib/billing'
 
 // Service-role client — bypasses RLS. The driver browser client updating
 // tote_requests directly was a likely-silent no-op: routes/totes/errors
@@ -21,10 +22,11 @@ interface OrderRef {
 
 export async function POST(req: NextRequest) {
   try {
-    const { toteIds, type, orderRef } = await req.json() as {
+    const { toteIds, type, orderRef, customerId } = await req.json() as {
       toteIds: string[]
       type: 'pickup' | 'delivery'
       orderRef?: OrderRef
+      customerId?: string
     }
 
     // Pickup stops: whatever totes actually got picked up are no longer
@@ -48,6 +50,23 @@ export async function POST(req: NextRequest) {
       // doesn't happen in practice today — the pickup-type branch above
       // already covers the real case. Kept for completeness.
       await supabase.from('totes').update({ pickup_requested: false }).eq('id', orderRef.sourceId)
+    }
+
+    // Recalculate this customer's real-time bill instead of leaving it to
+    // whatever it was until an admin next clicks "Recalculate" on the
+    // Billing page. Previously a tote's status could change completely
+    // (picked up, delivered, returned) with monthly_total never updating
+    // until that manual batch sync — confirmed as a real bug 2026-08-08:
+    // an empty tote picked up from a customer and returned to the
+    // warehouse kept the customer's bill exactly where it was (still
+    // showing the full $15/mo storage charge for a tote that, by the time
+    // this runs, calcMonthlyTotal no longer even counts as billable).
+    if (customerId) {
+      const { data: totes } = await supabase.from('totes').select('status, items').eq('customer_id', customerId)
+      if (totes) {
+        const total = calcMonthlyTotal(totes as { status: string; items: unknown[] | null }[])
+        await supabase.from('customers').update({ monthly_total: total }).eq('id', customerId)
+      }
     }
 
     return NextResponse.json({ success: true })
