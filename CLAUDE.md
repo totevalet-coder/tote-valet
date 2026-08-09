@@ -116,6 +116,14 @@ Use `src/lib/date.ts` instead, always:
 **AccountStatus:**
 `active | suspended | failed_payment`
 
+## Warehouse Pool (placeholder customer)
+
+`src/lib/warehousePool.ts` exports `WAREHOUSE_POOL_CUSTOMER_ID` — a real `customers` row (role `'customer'`, no `auth_id`, can't log in) representing unassigned/reusable empty totes, not a person. An empty tote's `customer_id` gets reassigned to it automatically the instant a driver picks it up (see `api/complete-route-stop`) — every tote's `customer_id` is a NOT NULL FK, so this is how "no longer belongs to that customer" is represented without a schema migration.
+
+**Any new query that lists "all customers" or sums customer totals (MRR, counts, dropdowns) must add `.neq('id', WAREHOUSE_POOL_CUSTOMER_ID)`** — there's no RLS/schema-level way to exclude it automatically. Current call sites doing this: `admin/customers`, `admin/billing` (list + MRR), the route builder's customer dropdown.
+
+Billing: only bill the $15/mo storage fee when a tote is both in a billed-storage status AND has real items — use `isBillableStorage()` from `lib/billing.ts`, never reimplement this check. It's already had to be fixed twice from two different hand-rolled copies (`calcMonthlyTotal` and the customer `/billing` page) that drifted apart.
+
 ## Force Complete Codes (driver errors)
 - FC-001: Scanner hardware failure
 - FC-002: Tote barcode unreadable/damaged
