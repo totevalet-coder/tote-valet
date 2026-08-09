@@ -116,6 +116,23 @@ export default function LoadTruckPage() {
     for (const stop of deliveryStops) {
       const known = stop.knownToteIds.find(t => t.toteId === val)
       if (known) {
+        // Persist the load — previously this only updated local React
+        // state, so a pre-assigned tote's real status never left wherever
+        // it was before loading (e.g. still 'returned_to_station' — "At
+        // Station" in My Items — even once the route was in progress and
+        // the tote was physically on the truck). Generic empty totes
+        // already got this write at registration time; known/pre-assigned
+        // ones didn't.
+        setScanning(true)
+        const { error } = await supabase.from('totes').update({
+          status: 'in_transit',
+          last_scan_date: new Date().toISOString(),
+        }).eq('id', val)
+        setScanning(false)
+        if (error) {
+          setScanError(`Couldn't update ${val}: ${error.message}. Try scanning it again.`)
+          return
+        }
         setLoadedTotes(prev => [...prev, { toteId: val, sealNumber: known.sealNumber, customerName: stop.customerName }])
         return
       }
