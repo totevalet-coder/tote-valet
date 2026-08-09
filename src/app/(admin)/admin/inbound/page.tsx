@@ -81,10 +81,21 @@ export default function InboundPage() {
           total={stats.expectedToday || undefined}
           subtext={stats.expectedToday > 0 ? `${stats.fullToday} full · ${stats.emptyToday} empty` : 'No pickups scheduled'}
           icon={Truck}
+          linkLabel="View in Inventory"
+          linkHref="/admin/totes?status=in_transit"
         />
-        <StatCard label="At Station" value={stats.atStation} subtext="Arrived, awaiting stow" icon={Package} valueColor="text-amber-600" />
-        <StatCard label="Stowed Today" value={stats.stowedToday} subtext="Confirmed in bin" icon={CheckCircle2} valueColor="text-green-600" />
-        <StatCard label="Total Stored" value={stats.storedTotal} subtext="All totes currently in bins" icon={Warehouse} />
+        <StatCard
+          label="At Station" value={stats.atStation} subtext="Arrived, awaiting stow" icon={Package} valueColor="text-amber-600"
+          linkLabel="View in Inventory" linkHref="/admin/totes?status=ready_to_stow"
+        />
+        <StatCard
+          label="Stowed Today" value={stats.stowedToday} subtext="Confirmed in bin" icon={CheckCircle2} valueColor="text-green-600"
+          linkLabel="View in Inventory" linkHref="/admin/totes?status=stored"
+        />
+        <StatCard
+          label="Total Stored" value={stats.storedTotal} subtext="All totes currently in bins" icon={Warehouse}
+          linkLabel="View in Inventory" linkHref="/admin/totes?status=stored"
+        />
       </div>
 
       <p className="text-xs text-gray-400 max-w-lg">

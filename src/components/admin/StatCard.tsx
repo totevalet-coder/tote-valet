@@ -12,10 +12,15 @@ interface StatCardProps {
   valueColor?: string
   linkLabel?: string
   linkHref?: string
+  // Alternative to linkHref for same-page drill-down (e.g. pre-selecting a
+  // status filter pill already on this page) — a router.push wouldn't
+  // reliably re-trigger state that was only read from the URL on first
+  // mount. Takes precedence over linkHref if both are given.
+  onLinkClick?: () => void
 }
 
 export default function StatCard({
-  label, value, total, subtext, icon: Icon, valueColor = 'text-brand-navy', linkLabel, linkHref,
+  label, value, total, subtext, icon: Icon, valueColor = 'text-brand-navy', linkLabel, linkHref, onLinkClick,
 }: StatCardProps) {
   const router = useRouter()
 
@@ -30,9 +35,9 @@ export default function StatCard({
         {total !== undefined && <span className="text-gray-300 text-xl font-bold"> / {total}</span>}
       </p>
       {subtext && <p className="text-xs text-gray-400">{subtext}</p>}
-      {linkLabel && linkHref && (
+      {linkLabel && (onLinkClick || linkHref) && (
         <button
-          onClick={() => router.push(linkHref)}
+          onClick={() => onLinkClick ? onLinkClick() : router.push(linkHref!)}
           className="flex items-center gap-1 text-xs font-semibold text-brand-blue hover:underline pt-1"
         >
           {linkLabel} <ArrowRight className="w-3 h-3" />

@@ -1,5 +1,8 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
+import { ArrowRight } from 'lucide-react'
+
 interface PaceIndicatorProps {
   label: string
   current: number
@@ -7,11 +10,14 @@ interface PaceIndicatorProps {
   elapsedPct: number   // % of shift elapsed — the "expected progress" line
   amberPts?: number    // behind-pace threshold, in percentage points, before amber
   redPts?: number       // behind-pace threshold, in percentage points, before red
+  linkLabel?: string
+  linkHref?: string
 }
 
 export default function PaceIndicator({
-  label, current, target, elapsedPct, amberPts = 10, redPts = 25,
+  label, current, target, elapsedPct, amberPts = 10, redPts = 25, linkLabel, linkHref,
 }: PaceIndicatorProps) {
+  const router = useRouter()
   const actualPct = target > 0 ? Math.min(100, (current / target) * 100) : 0
   const deltaPts = Math.round(actualPct - elapsedPct)
 
@@ -48,6 +54,14 @@ export default function PaceIndicator({
       <p className="text-[10px] text-gray-400">
         vs. % of shift elapsed — {Math.abs(deltaPts)}pt{Math.abs(deltaPts) !== 1 ? 's' : ''} {deltaPts >= 0 ? 'ahead' : 'behind'}
       </p>
+      {linkLabel && linkHref && (
+        <button
+          onClick={() => router.push(linkHref)}
+          className="flex items-center gap-1 text-xs font-semibold text-brand-blue hover:underline pt-1"
+        >
+          {linkLabel} <ArrowRight className="w-3 h-3" />
+        </button>
+      )}
     </div>
   )
 }

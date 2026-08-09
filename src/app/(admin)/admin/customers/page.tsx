@@ -67,7 +67,7 @@ export default function AdminCustomersPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard label="Customers" value={customers.length} icon={Users} />
-        <StatCard label="MRR" value={formatCurrency(totalMRR)} icon={DollarSign} valueColor="text-green-600" />
+        <StatCard label="MRR" value={formatCurrency(totalMRR)} icon={DollarSign} valueColor="text-green-600" linkLabel="View in Finance" linkHref="/admin/billing" />
         <StatCard
           label="Failed Payments" value={failedCount} icon={AlertTriangle}
           valueColor={failedCount > 0 ? 'text-red-600' : 'text-brand-navy'}

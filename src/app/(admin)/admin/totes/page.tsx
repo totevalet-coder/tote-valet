@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { ToteStatus, ToteItem } from '@/types/database'
 import { Package, Search, ChevronRight, AlertCircle, X, Warehouse, Truck, ClipboardList, Flag } from 'lucide-react'
@@ -32,8 +32,9 @@ const STATUS_META: Record<ToteStatus, { label: string; color: string; dot: strin
 
 const ALL_STATUSES = Object.keys(STATUS_META) as ToteStatus[]
 
-export default function AdminTotesPage() {
+function AdminTotesContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [totes, setTotes] = useState<ToteRow[]>([])
@@ -42,7 +43,14 @@ export default function AdminTotesPage() {
   const [binStats, setBinStats] = useState({ empty: 0, total: 0, locations: 0 })
 
   const [query, setQuery] = useState('')
-  const [activeStatus, setActiveStatus] = useState<ToteStatus | 'all'>('all')
+  // Other pages deep-link here with ?status=<ToteStatus> (e.g. Inbound's "At
+  // Station" tile) so a summary number always has somewhere to click
+  // through to and see exactly which totes it's counting — initialized
+  // once from the URL, same as a manually-clicked pill from then on.
+  const initialStatus = searchParams.get('status') as ToteStatus | null
+  const [activeStatus, setActiveStatus] = useState<ToteStatus | 'all'>(
+    initialStatus && initialStatus in STATUS_META ? initialStatus : 'all'
+  )
 
   const [counts, setCounts] = useState<Partial<Record<ToteStatus | 'all', number>>>({})
 
@@ -126,8 +134,14 @@ export default function AdminTotesPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Warehouse" value={counts.stored ?? 0} subtext="In bins or awaiting placement" icon={Warehouse} />
-        <StatCard label="At Customer" value={atCustomerFull} subtext={`Full · ${atCustomerEmpty} empty`} icon={Package} />
+        <StatCard
+          label="Warehouse" value={counts.stored ?? 0} subtext="In bins or awaiting placement" icon={Warehouse}
+          linkLabel="Filter list" onLinkClick={() => setActiveStatus('stored')}
+        />
+        <StatCard
+          label="At Customer" value={atCustomerFull} subtext={`Full · ${atCustomerEmpty} empty`} icon={Package}
+          linkLabel="Filter list" onLinkClick={() => setActiveStatus('empty_at_customer')}
+        />
         <StatCard
           label="Bin Capacity" value={binStats.empty} total={binStats.total}
           subtext={`Empty · across ${binStats.locations} bin locations`} icon={Warehouse}
@@ -245,5 +259,13 @@ export default function AdminTotesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function AdminTotesPage() {
+  return (
+    <Suspense fallback={<div className="p-6"><div className="h-24 bg-gray-200 rounded-2xl animate-pulse" /></div>}>
+      <AdminTotesContent />
+    </Suspense>
   )
 }

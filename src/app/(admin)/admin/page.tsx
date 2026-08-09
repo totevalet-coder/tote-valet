@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { RouteStop, PickListBin, DashboardThresholds } from '@/types/database'
 import {
-  Package, ClipboardList, Boxes, Truck as TruckIcon, CheckCircle2, Shuffle,
+  Package, ClipboardList, Boxes, Truck as TruckIcon, CheckCircle2, Shuffle, ArrowRight,
 } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
 import PaceIndicator from '@/components/admin/PaceIndicator'
@@ -229,6 +229,8 @@ export default function AdminDashboard() {
           total={stats.expectedToday || undefined}
           subtext={stats.expectedToday > 0 ? `${stats.fullToday} full · ${stats.emptyToday} empty` : 'No pickups scheduled'}
           icon={TruckIcon}
+          linkLabel="View Inbound"
+          linkHref="/admin/inbound"
         />
         <StatCard
           label="Unstowed"
@@ -263,6 +265,8 @@ export default function AdminDashboard() {
           subtext="Complete, ready for truck"
           icon={CheckCircle2}
           valueColor="text-green-600"
+          linkLabel="View in Inventory"
+          linkHref="/admin/totes?status=returned_to_station"
         />
         <StatCard
           label="Bin Capacity"
@@ -300,6 +304,12 @@ export default function AdminDashboard() {
                 ? `${routesDeficit} route${routesDeficit !== 1 ? 's' : ''} still need to be created`
                 : 'All active drivers have a route today'}
             </p>
+            <button
+              onClick={() => router.push('/admin/routes')}
+              className="flex items-center gap-1 text-xs font-semibold text-brand-blue hover:underline pt-1"
+            >
+              View Routes <ArrowRight className="w-3 h-3" />
+            </button>
           </div>
           <PaceIndicator
             label="Empty Totes Delivered"
@@ -308,6 +318,8 @@ export default function AdminDashboard() {
             elapsedPct={elapsedPct}
             amberPts={t.empty_totes_pace_amber_pts}
             redPts={t.empty_totes_pace_red_pts}
+            linkLabel="View Routes"
+            linkHref="/admin/routes"
           />
           <PaceIndicator
             label="Full Totes Delivered"
@@ -316,6 +328,8 @@ export default function AdminDashboard() {
             elapsedPct={elapsedPct}
             amberPts={t.full_totes_pace_amber_pts}
             redPts={t.full_totes_pace_red_pts}
+            linkLabel="View Routes"
+            linkHref="/admin/routes"
           />
           <PaceIndicator
             label="Full Totes Picked Up"
@@ -324,6 +338,8 @@ export default function AdminDashboard() {
             elapsedPct={elapsedPct}
             amberPts={t.full_totes_pace_amber_pts}
             redPts={t.full_totes_pace_red_pts}
+            linkLabel="View Routes"
+            linkHref="/admin/routes"
           />
         </div>
       </section>

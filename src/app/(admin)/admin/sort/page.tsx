@@ -103,7 +103,10 @@ export default function AdminSortPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="In Drop Zone" value={dropZone.length} subtext="Picked, awaiting sort" icon={Package} valueColor="text-amber-600" />
-        <StatCard label="Sorted Today" value={sortedToday} subtext="Routed to a staging zone" icon={CheckCircle2} valueColor="text-green-600" />
+        <StatCard
+          label="Sorted Today" value={sortedToday} subtext="Routed to a staging zone" icon={CheckCircle2} valueColor="text-green-600"
+          linkLabel="View in Inventory" linkHref="/admin/totes?status=returned_to_station"
+        />
         <StatCard
           label="No Route Match"
           value={noRouteCount}
