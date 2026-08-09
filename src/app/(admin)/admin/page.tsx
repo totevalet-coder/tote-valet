@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { RouteStop, PickListBin, DashboardThresholds } from '@/types/database'
 import {
-  Package, ClipboardList, Boxes, Truck as TruckIcon, CheckCircle2,
+  Package, ClipboardList, Boxes, Truck as TruckIcon, CheckCircle2, Shuffle,
 } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
 import PaceIndicator from '@/components/admin/PaceIndicator'
@@ -22,6 +22,8 @@ interface DashboardStats {
   // Open Pick Lists
   openPickLists: number
   openPickListTotes: number
+  // In Drop Zone (picked, awaiting sort)
+  inDropZone: number
   // Staged & Ready
   stagedReady: number
   // Bin Capacity
@@ -34,6 +36,8 @@ interface DashboardStats {
   fullTotesPickedUpTarget: number
   emptyTotesDelivered: number
   emptyTotesDeliveredTarget: number
+  fullTotesDelivered: number
+  fullTotesDeliveredTarget: number
   thresholds: DashboardThresholds | null
 }
 
@@ -92,8 +96,9 @@ export default function AdminDashboard() {
     const binUsed = bins.reduce((s, b) => s + b.current_count, 0)
     const binSpacesAvailable = binTotalCapacity - binUsed
 
-    // Unstowed / Staged & Ready
+    // Unstowed / In Drop Zone / Staged & Ready
     const unstowed = totes.filter(t => t.status === 'ready_to_stow').length
+    const inDropZone = totes.filter(t => t.status === 'picked').length
     const stagedReady = totes.filter(t => t.status === 'returned_to_station').length
 
     // Open Pick Lists
@@ -154,15 +159,29 @@ export default function AdminDashboard() {
       id => (toteById.get(id)?.items?.length ?? 0) === 0
     ).length
 
+    // Full totes delivered — a stored tote of real belongings being sent
+    // back to its customer (full_tote_delivery), same approximation as the
+    // other pace metrics: current item count + stop completion as a proxy.
+    let fullTotesDelivered = 0
+    for (const [id, stop] of deliveryStopsById) {
+      const t = toteById.get(id)
+      if (t && (t.items?.length ?? 0) > 0 && stop.completed) fullTotesDelivered++
+    }
+    const fullTotesDeliveredTarget = [...deliveryStopsById.keys()].filter(
+      id => (toteById.get(id)?.items?.length ?? 0) > 0
+    ).length
+
     setStats({
       receivedToday, expectedToday: expectedToteIds.size, fullToday, emptyToday,
       unstowed,
       openPickLists, openPickListTotes,
+      inDropZone,
       stagedReady,
       binSpacesAvailable, binTotalCapacity,
       routesCreated, routesTarget,
       fullTotesPickedUp, fullTotesPickedUpTarget,
       emptyTotesDelivered, emptyTotesDeliveredTarget,
+      fullTotesDelivered, fullTotesDeliveredTarget,
       thresholds,
     })
     setLoading(false)
@@ -203,7 +222,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Top summary row */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         <StatCard
           label="Inbound Today"
           value={stats.receivedToday}
@@ -230,6 +249,15 @@ export default function AdminDashboard() {
           linkHref="/admin/pick-lists"
         />
         <StatCard
+          label="In Drop Zone"
+          value={stats.inDropZone}
+          subtext="Picked, awaiting sort"
+          icon={Shuffle}
+          valueColor="text-amber-600"
+          linkLabel="View Sort"
+          linkHref="/admin/sort"
+        />
+        <StatCard
           label="Staged & Ready"
           value={stats.stagedReady}
           subtext="Complete, ready for truck"
@@ -254,7 +282,7 @@ export default function AdminDashboard() {
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Driver Operations — Today</h2>
           <span className="text-[10px] text-gray-400 font-semibold">6:00a–2:00p shift · {elapsedPct}% elapsed</span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="card p-5 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Routes Today</p>
@@ -280,6 +308,14 @@ export default function AdminDashboard() {
             elapsedPct={elapsedPct}
             amberPts={t.empty_totes_pace_amber_pts}
             redPts={t.empty_totes_pace_red_pts}
+          />
+          <PaceIndicator
+            label="Full Totes Delivered"
+            current={stats.fullTotesDelivered}
+            target={stats.fullTotesDeliveredTarget}
+            elapsedPct={elapsedPct}
+            amberPts={t.full_totes_pace_amber_pts}
+            redPts={t.full_totes_pace_red_pts}
           />
           <PaceIndicator
             label="Full Totes Picked Up"
