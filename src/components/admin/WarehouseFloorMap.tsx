@@ -9,12 +9,17 @@ import { RotateCw, GripVertical, PackageOpen, ArrowUpDown, MapPin } from 'lucide
 // Floor Map / "Warehouse Editor" (TODO #10) — see schema.sql's
 // "warehouse_rows table + locations.map_x/map_y" migration for the full
 // design rationale and the user's confirmed decisions. Two distinct
-// rotation mechanisms live here on purpose, not one:
-//   - `viewRotation` (this component's own state, 4-way, never persisted)
-//     — lets the operator spin the whole map to match which way they're
-//     facing on the floor. Pure viewing transform.
-//   - each row's own `rotation` (persisted, 2-way: horizontal/vertical)
-//     — real layout data, since rows don't all run the same direction.
+// rotation mechanisms live here on purpose, not one, and both are full
+// 4-way (0/90/180/270), each click advancing 90°:
+//   - `viewRotation` — persisted per warehouse on `warehouses.map_view_rotation`
+//     (see schema.sql's "warehouses.map_view_rotation" migration) — lets
+//     the operator spin the whole map to match which way they're facing on
+//     the floor, and stays that way next time anyone opens this warehouse's
+//     map, not just for the session that set it.
+//   - each row's own `rotation` (persisted on warehouse_rows) — real layout
+//     data, since rows don't all run the same direction OR the same
+//     reading direction (bin 1 on the left vs. bin 1 on the right) on a
+//     real floor.
 // Bin/row CREATION still happens via the existing "New Row" form (see the
 // parent page) — this component only arranges/visualizes what exists,
 // edits individual bin capacity, and places zones.
@@ -89,12 +94,17 @@ export default function WarehouseFloorMap({ warehouseId, bins, onCapacityChange 
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [rowsData, zonesRes] = await Promise.all([
+    const [rowsData, zonesRes, warehouseRes] = await Promise.all([
       listWarehouseRows(supabase, warehouseId),
       supabase.from('locations').select('*').eq('warehouse_id', warehouseId),
+      supabase.from('warehouses').select('map_view_rotation').eq('id', warehouseId).maybeSingle(),
     ])
     setRows(rowsData)
     setZones((zonesRes.data ?? []) as Location[])
+    // Falls back to 0 gracefully if the map_view_rotation column doesn't
+    // exist yet on the live DB (migration not run) — same "renders fine,
+    // just doesn't persist yet" degradation as the rest of this component.
+    setViewRotation((warehouseRes.data?.map_view_rotation ?? 0) as 0 | 90 | 180 | 270)
     setLoading(false)
   }, [supabase, warehouseId])
 
@@ -128,13 +138,22 @@ export default function WarehouseFloorMap({ warehouseId, bins, onCapacityChange 
   const unplacedZones = useMemo(() => zones.filter(z => z.map_x == null || z.map_y == null), [zones])
 
   // Every bin's true grid position: row anchor + its offset along whichever
-  // axis the row's own rotation implies.
+  // axis/direction the row's own rotation implies. Full 4-way, not just
+  // horizontal/vertical — 0°/180° both run horizontal but in opposite
+  // directions (bin 1 left vs. bin 1 right), same for 90°/270° vertical,
+  // since a real floor can need bin numbering read either way. Offsets can
+  // go negative here (180°/270°) — that's fine, the screen-space
+  // normalization below shifts everything back to non-negative afterward.
   const binPositions = useMemo(() => {
     const result: { bin: BinInfo; gx: number; gy: number; row: WarehouseRow; isFirst: boolean }[] = []
     for (const rowMeta of rowLayout) {
       const rowBins = bins.filter(b => b.row === rowMeta.row).sort((a, b) => parseBinNum(a.id) - parseBinNum(b.id))
       rowBins.forEach((bin, i) => {
-        const [ox, oy] = rowMeta.rotation === 90 ? [0, i] : [i, 0]
+        let ox = 0, oy = 0
+        if (rowMeta.rotation === 90) oy = i
+        else if (rowMeta.rotation === 180) ox = -i
+        else if (rowMeta.rotation === 270) oy = -i
+        else ox = i // 0
         result.push({ bin, gx: rowMeta.map_x + ox, gy: rowMeta.map_y + oy, row: rowMeta, isFirst: i === 0 })
       })
     }
@@ -194,8 +213,11 @@ export default function WarehouseFloorMap({ warehouseId, bins, onCapacityChange 
     window.addEventListener('pointerup', onUp)
   }
 
-  async function toggleRowRotation(rowMeta: WarehouseRow) {
-    const next = rowMeta.rotation === 90 ? 0 : 90
+  async function rotateRow(rowMeta: WarehouseRow) {
+    // Full 90°-at-a-time cycle through all 4, not just a horizontal/
+    // vertical toggle — needed so bin numbering can run in either
+    // direction along each axis to actually match a real floor.
+    const next = ((rowMeta.rotation + 90) % 360) as 0 | 90 | 180 | 270
     setRows(prev => {
       const exists = prev.some(r => r.row === rowMeta.row)
       return exists
@@ -245,8 +267,10 @@ export default function WarehouseFloorMap({ warehouseId, bins, onCapacityChange 
     if (!error) setZones(prev => prev.map(z => z.id === zone.id ? { ...z, map_x: 0, map_y: 0 } : z))
   }
 
-  function rotateView() {
-    setViewRotation(prev => (((prev + 90) % 360) as 0 | 90 | 180 | 270))
+  async function rotateView() {
+    const next = ((viewRotation + 90) % 360) as 0 | 90 | 180 | 270
+    setViewRotation(next)
+    await supabase.from('warehouses').update({ map_view_rotation: next }).eq('id', warehouseId)
   }
 
   async function saveCapacity() {
@@ -272,7 +296,7 @@ export default function WarehouseFloorMap({ warehouseId, bins, onCapacityChange 
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <p className="text-xs text-gray-400 max-w-md">
           Drag a row&apos;s <GripVertical className="w-3 h-3 inline -mt-0.5" /> handle to reposition it, tap its ↻ to
-          flip it horizontal/vertical. Click any bin to override its capacity. Drag a placed zone pin to move it.
+          rotate it 90° at a time. Click any bin to override its capacity. Drag a placed zone pin to move it.
         </p>
         <button
           onClick={rotateView}
@@ -316,9 +340,9 @@ export default function WarehouseFloorMap({ warehouseId, bins, onCapacityChange 
                   <GripVertical className="w-2.5 h-2.5" /> {rowMeta.row}
                   <button
                     onPointerDown={e => e.stopPropagation()}
-                    onClick={() => toggleRowRotation(rowMeta)}
+                    onClick={() => rotateRow(rowMeta)}
                     className="ml-0.5 hover:text-brand-blue"
-                    title="Flip this row horizontal/vertical"
+                    title="Rotate this row 90°"
                   >
                     <RotateCw className="w-2.5 h-2.5" />
                   </button>

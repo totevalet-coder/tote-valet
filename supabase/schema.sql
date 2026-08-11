@@ -886,6 +886,25 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 -- SELECT COUNT(DISTINCT (warehouse_id, row)) FROM bins; — same number.
 
 -- ============================================================
+-- ⏳ PENDING — warehouses.map_view_rotation (Floor Map, TODO #10 follow-up).
+-- Added 2026-08-09 per direct user feedback after trying the Floor Map
+-- live: rotating the whole-map view was resetting on every page load, and
+-- the user wants it to stay how they left it. Persisted per warehouse
+-- (shared across whoever opens that warehouse's map), not per-browser —
+-- it's treated as a fact about how that warehouse's map should be viewed,
+-- not a personal per-operator preference. No nullable-then-backfill dance
+-- needed here (unlike most migrations in this file) — DEFAULT 0 is always
+-- a valid, safe starting value, so this goes straight to NOT NULL.
+--
+-- ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS map_view_rotation integer NOT NULL DEFAULT 0;
+--
+-- No RLS/GRANT changes needed — warehouses already has both from the
+-- "warehouses + locations tables" migration above; this just adds a column
+-- to an already-covered table.
+--
+-- Run this, then flip to ✅ Done.
+
+-- ============================================================
 -- SEED DATA: Default bin setup (rows A, B, C — 10 totes each)
 -- Uncomment to populate a starting warehouse layout
 -- ============================================================

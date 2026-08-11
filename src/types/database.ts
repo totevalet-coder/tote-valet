@@ -618,6 +618,7 @@ export type Database = {
           name: string
           code: string
           address: string | null
+          map_view_rotation: number
           created_at: string
         }
         Insert: {
@@ -626,6 +627,7 @@ export type Database = {
           name: string
           code: string
           address?: string | null
+          map_view_rotation?: number
           created_at?: string
         }
         Update: {
@@ -634,6 +636,7 @@ export type Database = {
           name?: string
           code?: string
           address?: string | null
+          map_view_rotation?: number
           created_at?: string
         }
         Relationships: [
