@@ -803,7 +803,7 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 -- missing human-error guardrail; user's explicit call to skip it for now).
 
 -- ============================================================
--- ⏳ PENDING — warehouse_rows table + locations.map_x/map_y (Warehouse
+-- ✅ DONE — warehouse_rows table + locations.map_x/map_y (Warehouse
 -- Floor Map / "Warehouse Editor", TODO #10). Added 2026-08-09 per the
 -- user's detailed spec: a visual floor-plan view under Warehouse Setup,
 -- alongside (not replacing) the existing list-based Bin Layout. Design
@@ -832,8 +832,10 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 -- A row's (map_x, map_y) is its anchor (top-left corner); its bins render
 -- in sequence extending from there in the direction implied by rotation.
 --
--- Run this whole block in the Supabase SQL editor, in order. Then flip
--- this to ✅ Done.
+-- Applied live 2026-08-09. GRANT verified via information_schema.role_table_grants
+-- (7 rows for warehouse_rows/authenticated, including SELECT/INSERT/UPDATE/
+-- DELETE). Block kept commented here as a record; the version actually run
+-- was pasted directly into the SQL editor, matching this statement-for-statement.
 --
 -- CREATE TABLE IF NOT EXISTS warehouse_rows (
 --   id            uuid primary key default uuid_generate_v4(),
