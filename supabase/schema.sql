@@ -886,7 +886,7 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 -- SELECT COUNT(DISTINCT (warehouse_id, row)) FROM bins; — same number.
 
 -- ============================================================
--- ⏳ PENDING — warehouses.map_view_rotation (Floor Map, TODO #10 follow-up).
+-- ✅ DONE — warehouses.map_view_rotation (Floor Map, TODO #10 follow-up).
 -- Added 2026-08-09 per direct user feedback after trying the Floor Map
 -- live: rotating the whole-map view was resetting on every page load, and
 -- the user wants it to stay how they left it. Persisted per warehouse
@@ -902,7 +902,7 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 -- "warehouses + locations tables" migration above; this just adds a column
 -- to an already-covered table.
 --
--- Run this, then flip to ✅ Done.
+-- Applied live 2026-08-09, confirmed working end-to-end by the user the same day.
 
 -- ============================================================
 -- SEED DATA: Default bin setup (rows A, B, C — 10 totes each)
