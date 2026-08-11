@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   Rows3, Boxes, Gauge, Plus, GripHorizontal, AlertTriangle, CheckCircle2,
-  Map as MapIcon, Warehouse as WarehouseIcon, PackageOpen, ArrowUpDown, X,
+  Map as MapIcon, List, Warehouse as WarehouseIcon, PackageOpen, ArrowUpDown, X,
 } from 'lucide-react'
 import StatCard from '@/components/admin/StatCard'
 import type { Warehouse, Location, LocationType } from '@/types/database'
 import { listWarehouses } from '@/lib/warehouses'
+import WarehouseFloorMap from '@/components/admin/WarehouseFloorMap'
 
 interface BinInfo {
   id: string
@@ -78,6 +79,11 @@ export default function WarehouseSetupPage() {
   const [dragRow, setDragRow] = useState<string | null>(null)
   const [dragCount, setDragCount] = useState(0)
   const dragStartY = useRef(0)
+
+  // Bin Layout has two views of the same data: the fast scannable list
+  // (unchanged, still how bins get created) and the new Floor Map (purely
+  // for arranging/visualizing what already exists) — see TODO #10.
+  const [layoutTab, setLayoutTab] = useState<'list' | 'map'>('list')
 
   // Waits for the warehouses fetch to resolve once before bins load, so
   // bins aren't fetched unfiltered-then-refiltered (a visible flash of the
@@ -217,6 +223,13 @@ export default function WarehouseSetupPage() {
     window.addEventListener('pointerup', onUp)
   }
 
+  // Floor Map's bin-capacity edits happen inside that component (it writes
+  // to Supabase itself); this just keeps the list view / stat cards in
+  // sync afterward without a full refetch.
+  function handleCapacityChange(binId: string, newCapacity: number) {
+    setBins(prev => prev.map(b => b.id === binId ? { ...b, capacity: newCapacity } : b))
+  }
+
   async function commitDragFill(row: string, count: number) {
     const rowBins = bins.filter(b => b.row === row)
     const maxNum = Math.max(0, ...rowBins.map(b => parseBinNum(b.id)))
@@ -328,8 +341,32 @@ export default function WarehouseSetupPage() {
           )}
         </div>
 
-        {/* Row grids */}
-        {rows.length === 0 ? (
+        {/* List / Floor Map tabs — two views of the same bin data. List is
+            still how bins get created (New Row form above); Floor Map is
+            purely for arranging/visualizing what already exists. */}
+        <div className="flex bg-gray-100 rounded-xl p-1 w-fit">
+          {([['list', 'List', List], ['map', 'Floor Map', MapIcon]] as const).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              onClick={() => setLayoutTab(id)}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                layoutTab === id ? 'bg-white text-brand-navy shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+
+        {layoutTab === 'map' ? (
+          warehouses.length > 0 && selectedWarehouseId ? (
+            <WarehouseFloorMap warehouseId={selectedWarehouseId} bins={bins} onCapacityChange={handleCapacityChange} />
+          ) : (
+            <p className="text-center text-gray-400 text-sm py-12">
+              Floor Map needs the multi-warehouse migration run first — select a warehouse above once it has.
+            </p>
+          )
+        ) : rows.length === 0 ? (
           <p className="text-center text-gray-400 text-sm py-8">No bins configured yet — create your first row above.</p>
         ) : (
           <div className="space-y-4">
@@ -395,27 +432,21 @@ export default function WarehouseSetupPage() {
           </div>
         )}
 
-        {/* Legend */}
-        <div className="flex gap-4 justify-center pt-2">
-          {[
-            { color: 'bg-green-200', label: '< 60%' },
-            { color: 'bg-amber-200', label: '60–90%' },
-            { color: 'bg-red-200', label: '> 90%' },
-          ].map(({ color, label }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <div className={`w-3 h-3 rounded-full ${color}`} />
-              <span className="text-xs text-gray-500">{label}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Future map placeholder — carried over from the Reports > Bins tab */}
-        <button
-          disabled
-          className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 text-gray-400 rounded-2xl py-3 font-semibold text-sm cursor-not-allowed max-w-2xl"
-        >
-          <MapIcon className="w-4 h-4" /> Warehouse Layout Map (Coming Soon)
-        </button>
+        {/* Legend — list view only; the Floor Map has its own built in */}
+        {layoutTab === 'list' && (
+          <div className="flex gap-4 justify-center pt-2">
+            {[
+              { color: 'bg-green-200', label: '< 60%' },
+              { color: 'bg-amber-200', label: '60–90%' },
+              { color: 'bg-red-200', label: '> 90%' },
+            ].map(({ color, label }) => (
+              <div key={label} className="flex items-center gap-1.5">
+                <div className={`w-3 h-3 rounded-full ${color}`} />
+                <span className="text-xs text-gray-500">{label}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Drop Zones & Staging Zones */}

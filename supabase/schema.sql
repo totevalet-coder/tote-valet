@@ -796,13 +796,92 @@ create policy "dashboard_thresholds_admin_all" on dashboard_thresholds
 -- Verify the backfill landed before building/using warehouse-scoped bin
 -- code: SELECT COUNT(*) FROM bins WHERE warehouse_id IS NULL; -- must be 0
 --
--- Still deliberately deferred past this migration: full warehouse-scoping
--- of warehouse/scan-store's bin-scan step, warehouse/reports' Bins tab,
--- and pickLists.ts's bin-selection logic. This migration + the
--- warehouse-setup UI change alongside it make bin *creation* and *layout
--- viewing* warehouse-aware; scan/report/pick-list consumers of bins still
--- treat them as one flat pool. Revisit when a second warehouse actually
--- has bins in it and that gap starts mattering day to day.
+-- pickLists.ts's bin-selection logic and warehouse/reports' Bins tab were
+-- both scoped by warehouse later the same day (2026-08-09) — see CLAUDE.md.
+-- warehouse/scan-store's bin-scan step was evaluated and deliberately left
+-- unscoped (not a correctness bug — bin ids are globally unique — just a
+-- missing human-error guardrail; user's explicit call to skip it for now).
+
+-- ============================================================
+-- ⏳ PENDING — warehouse_rows table + locations.map_x/map_y (Warehouse
+-- Floor Map / "Warehouse Editor", TODO #10). Added 2026-08-09 per the
+-- user's detailed spec: a visual floor-plan view under Warehouse Setup,
+-- alongside (not replacing) the existing list-based Bin Layout. Design
+-- decisions confirmed directly by the user:
+--   - Bins are still CREATED via the existing "New Row" form — the map is
+--     for arranging/visualizing what already exists, not for drawing new
+--     rows into being.
+--   - Whole ROWS are freely draggable to any position, AND each row stores
+--     its own real orientation (not all rows run the same direction on a
+--     real floor) — this is why a new `warehouse_rows` table exists at
+--     all, rather than just adding columns to `bins`: position/orientation
+--     is a property of the row as a unit, not of each individual bin.
+--   - There are TWO separate rotation mechanisms, not one: a global
+--     "rotate my view" button (client-side only, not stored — lets the
+--     operator orient the whole map to match which way they're facing on
+--     the floor) AND each row's own stored `rotation`, which is real
+--     layout data.
+--   - Individual bin capacity overrides (e.g. "bin A-04 can only hold 2,
+--     not 10, something's in the way") already exist via
+--     warehouse/reports' Bins tab (`bins.capacity`, no schema change
+--     needed) — the Floor Map reuses that same click-to-edit interaction,
+--     just placed spatially instead of in a list.
+--
+-- `map_x`/`map_y` are integer grid cells, not pixels (matches the
+-- Excel-drag-to-fill metaphor the rest of Warehouse Setup already uses).
+-- A row's (map_x, map_y) is its anchor (top-left corner); its bins render
+-- in sequence extending from there in the direction implied by rotation.
+--
+-- Run this whole block in the Supabase SQL editor, in order. Then flip
+-- this to ✅ Done.
+--
+-- CREATE TABLE IF NOT EXISTS warehouse_rows (
+--   id            uuid primary key default uuid_generate_v4(),
+--   warehouse_id  uuid not null references warehouses(id),
+--   row           text not null,
+--   map_x         integer not null default 0,
+--   map_y         integer not null default 0,
+--   rotation      integer not null default 0, -- degrees: 0, 90, 180, or 270
+--   created_at    timestamptz not null default now(),
+--   UNIQUE (warehouse_id, row)
+-- );
+--
+-- CREATE INDEX IF NOT EXISTS idx_warehouse_rows_warehouse_id ON warehouse_rows(warehouse_id);
+--
+-- -- Backfill: every (warehouse_id, row) combo that already exists in bins
+-- -- gets a default entry — stacked vertically, one cell apart, in
+-- -- alphabetical order, all horizontal (rotation 0). Purely a starting
+-- -- point; the user drags/rotates rows afterward to match their real floor.
+-- INSERT INTO warehouse_rows (warehouse_id, row, map_x, map_y, rotation)
+-- SELECT warehouse_id, row, 0, (ROW_NUMBER() OVER (PARTITION BY warehouse_id ORDER BY row) - 1)::int, 0
+-- FROM (SELECT DISTINCT warehouse_id, row FROM bins) t
+-- ON CONFLICT (warehouse_id, row) DO NOTHING;
+--
+-- ALTER TABLE locations ADD COLUMN IF NOT EXISTS map_x integer;
+-- ALTER TABLE locations ADD COLUMN IF NOT EXISTS map_y integer;
+-- -- NULL map_x/map_y means "not yet placed on the map" — the zone still
+-- -- exists and works everywhere else, it just renders in an "unplaced"
+-- -- tray on the Floor Map until dragged onto the grid once.
+--
+-- ALTER TABLE warehouse_rows ENABLE ROW LEVEL SECURITY;
+--
+-- -- Same shape as bins' own policies (schema.sql, search "bins_staff_read")
+-- -- — staff read, warehouse/admin write.
+-- CREATE POLICY "warehouse_rows_staff_read" ON warehouse_rows
+--   FOR SELECT USING (get_my_role() IN ('driver','warehouse','sorter','admin'));
+-- CREATE POLICY "warehouse_rows_warehouse_write" ON warehouse_rows
+--   FOR ALL USING (get_my_role() IN ('warehouse','admin'));
+--
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.warehouse_rows TO authenticated;
+--
+-- ⚠️ After running this, VERIFY THE GRANT ACTUALLY LANDED, same as every
+-- other migration in this file:
+--   SELECT grantee, table_name, privilege_type FROM information_schema.role_table_grants
+--   WHERE table_name = 'warehouse_rows' AND grantee = 'authenticated';
+--
+-- Also verify the backfill: SELECT COUNT(*) FROM warehouse_rows; should
+-- equal the number of distinct (warehouse_id, row) pairs in bins —
+-- SELECT COUNT(DISTINCT (warehouse_id, row)) FROM bins; — same number.
 
 -- ============================================================
 -- SEED DATA: Default bin setup (rows A, B, C — 10 totes each)

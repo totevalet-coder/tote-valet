@@ -653,6 +653,8 @@ export type Database = {
           type: "drop_zone" | "staging_zone"
           code: string
           notes: string | null
+          map_x: number | null
+          map_y: number | null
           created_at: string
         }
         Insert: {
@@ -661,6 +663,8 @@ export type Database = {
           type: "drop_zone" | "staging_zone"
           code: string
           notes?: string | null
+          map_x?: number | null
+          map_y?: number | null
           created_at?: string
         }
         Update: {
@@ -669,11 +673,51 @@ export type Database = {
           type?: "drop_zone" | "staging_zone"
           code?: string
           notes?: string | null
+          map_x?: number | null
+          map_y?: number | null
           created_at?: string
         }
         Relationships: [
           {
             foreignKeyName: "locations_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      warehouse_rows: {
+        Row: {
+          id: string
+          warehouse_id: string
+          row: string
+          map_x: number
+          map_y: number
+          rotation: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          warehouse_id: string
+          row: string
+          map_x?: number
+          map_y?: number
+          rotation?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          warehouse_id?: string
+          row?: string
+          map_x?: number
+          map_y?: number
+          rotation?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warehouse_rows_warehouse_id_fkey"
             columns: ["warehouse_id"]
             isOneToOne: false
             referencedRelation: "warehouses"
@@ -937,3 +981,4 @@ export type DashboardThresholds = Database['public']['Tables']['dashboard_thresh
 export type Warehouse = Database['public']['Tables']['warehouses']['Row']
 export type Location = Database['public']['Tables']['locations']['Row']
 export type LocationType = Location['type']
+export type WarehouseRow = Database['public']['Tables']['warehouse_rows']['Row']
