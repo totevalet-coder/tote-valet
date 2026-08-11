@@ -7,7 +7,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Bell, Truck, Package, ClipboardList, Navigation,
-  AlertTriangle, Users, CreditCard, Settings, Warehouse, Shuffle,
+  AlertTriangle, Users, CreditCard, Settings, Warehouse, Shuffle, ExternalLink,
 } from 'lucide-react'
 
 interface NavItem {
@@ -48,6 +48,16 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/billing',          label: 'Finance',         icon: CreditCard },
       { href: '/admin/settings',         label: 'Settings',        icon: Settings },
       { href: '/admin/warehouse-setup',  label: 'Warehouse Setup', icon: Warehouse },
+    ],
+  },
+  {
+    // Separate portal, not an /admin/* page — the warehouse portal has its
+    // own mobile-oriented layout/sidebar entirely. Admin can view it (see
+    // useRoleGuard's role-switcher note), but there's no other link into it
+    // from anywhere in the admin shell, so this is a direct jump-over.
+    label: 'Other Portals',
+    items: [
+      { href: '/warehouse/reports', label: 'Warehouse Reports', icon: ExternalLink },
     ],
   },
 ]
